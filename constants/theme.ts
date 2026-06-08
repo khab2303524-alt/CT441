@@ -5,25 +5,39 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Cần Thơ University Colors
+const CTU_NavyBlue = '#1F5CA9';
+const CTU_SkyBlue = '#00AFEF';
+const CTU_Gold = '#FFF200';
+const CTU_LightBlue = '#E8F4FB';
+const CTU_Red = '#ED1C24';
+const tintColorLight = CTU_NavyBlue;
+const tintColorDark = CTU_SkyBlue;
 
 export const Colors = {
   light: {
     text: '#11181C',
-    background: '#fff',
+    background: '#F5F9FF',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    icon: CTU_NavyBlue,
+    tabIconDefault: '#999999',
+    tabIconSelected: CTU_NavyBlue,
+    primary: CTU_NavyBlue,
+    secondary: CTU_SkyBlue,
+    accent: CTU_Gold,
+    lightBg: CTU_LightBlue,
   },
   dark: {
     text: '#ECEDEE',
-    background: '#151718',
+    background: '#0A1929',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    icon: CTU_SkyBlue,
+    tabIconDefault: '#666666',
+    tabIconSelected: CTU_SkyBlue,
+    primary: CTU_SkyBlue,
+    secondary: CTU_LightBlue,
+    accent: CTU_Gold,
+    lightBg: '#1A3A52',
   },
 };
 
