@@ -1,80 +1,89 @@
-import React, { useRef, useEffect } from 'react';
-import { Animated, Pressable, StyleSheet, ViewStyle } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Pressable, StyleSheet } from 'react-native';
 
 interface CustomSwitchProps {
   value: boolean;
-  onValueChange: () => void;
-  trackColor?: { false: string; true: string };
-  thumbColor?: string;
-  style?: ViewStyle | ViewStyle[];
+  onValueChange: (value: boolean) => void;
+  activeColor?: string;
+  inactiveColor?: string;
+  size?: 'sm' | 'md';
+  disabled?: boolean;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const SIZES = {
+  sm: { trackW: 40, trackH: 22, thumb: 16, padding: 3 },
+  md: { trackW: 46, trackH: 24, thumb: 18, padding: 3 },
+};
 
-export const CustomSwitch: React.FC<CustomSwitchProps> = ({
+export function CustomSwitch({
   value,
   onValueChange,
-  trackColor = { false: '#E0E0E0', true: '#00AFEF' },
-  thumbColor = '#ffffff',
-  style,
-}) => {
-  const animatedValue = useRef(new Animated.Value(value ? 1 : 0)).current;
+  activeColor = '#00AFEF',
+  inactiveColor = '#CBD5E0',
+  size = 'md',
+  disabled = false,
+}: CustomSwitchProps) {
+  const dim = SIZES[size];
+  const travel = dim.trackW - dim.thumb - dim.padding * 2;
+
+  const translateX = useRef(new Animated.Value(value ? travel : 0)).current;
 
   useEffect(() => {
-    Animated.timing(animatedValue, {
-      toValue: value ? 1 : 0,
-      duration: 150,
-      useNativeDriver: false,
+    Animated.spring(translateX, {
+      toValue: value ? travel : 0,
+      useNativeDriver: true,
+      tension: 120,
+      friction: 10,
     }).start();
-  }, [value, animatedValue]);
-
-  // Track rộng 32px, Thumb rộng 20px. Chiều cao track 15px, Thumb 20px.
-  // Khi tắt/bật, nút tròn tự động nhô ra ngoài lề trái/phải đều nhau 2.5px
-  // khớp hoàn toàn với độ nhô lên/xuống theo chiều dọc giúp nút tròn cân đối tuyệt đối.
-  const translateX = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-2.5, 14.5],
-  });
-
-  const backgroundColor = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [trackColor.false, trackColor.true],
-  });
+  }, [value]);
 
   return (
-    <AnimatedPressable
-      onPress={onValueChange}
-      style={[styles.track, { backgroundColor } as any, style]}
+    <Pressable
+      onPress={() => { if (!disabled) onValueChange(!value); }}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled }}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <Animated.View
         style={[
-          styles.thumb,
+          styles.track,
           {
-            transform: [{ translateX }],
-            backgroundColor: thumbColor,
+            width: dim.trackW,
+            height: dim.trackH,
+            borderRadius: dim.trackH / 2,
+            backgroundColor: value ? activeColor : inactiveColor,
+            padding: dim.padding,
+            opacity: disabled ? 0.45 : 1,
           },
         ]}
-      />
-    </AnimatedPressable>
+      >
+        <Animated.View
+          style={[
+            styles.thumb,
+            {
+              width: dim.thumb,
+              height: dim.thumb,
+              borderRadius: dim.thumb / 2,
+              transform: [{ translateX }],
+            },
+          ]}
+        />
+      </Animated.View>
+    </Pressable>
   );
-};
+}
 
 const styles = StyleSheet.create({
   track: {
-    width: 32,          // Thu ngắn chiều rộng từ 36 xuống 32
-    height: 15,         // Tăng chiều cao từ 14 lên 15 giúp thanh nền dày dặn hơn
-    borderRadius: 7.5,  // Bo tròn mượt mà theo chiều cao mới (15 / 2)
     justifyContent: 'center',
-    overflow: 'visible', // Cho phép nút tròn hiển thị nổi hẳn lên trên thanh nền
+    overflow: 'hidden',
   },
   thumb: {
-    width: 20,          // Tăng kích thước nút tròn thêm 2px (từ 18 lên 20)
-    height: 20,         // Tăng kích thước nút tròn thêm 2px (từ 18 lên 20)
-    borderRadius: 10,   // Bo tròn hoàn hảo (20 / 2)
+    backgroundColor: '#ffffff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.23,
-    shadowRadius: 2.62,
-    elevation: 4,       // Tạo độ nổi khối đổ bóng rõ nét
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
 });

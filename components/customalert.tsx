@@ -31,9 +31,9 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({ visible, alert, onDism
   if (!visible || !alert) return null;
 
   const colors = {
-    success: { bg: '#F0FDF4', border: '#86EFAC', text: '#166534', icon: '#22C55E' },
-    error: { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', icon: '#EF4444' },
-    info: { bg: '#F0F9FF', border: '#BAE6FD', text: '#0C2340', icon: '#3B82F6' },
+    success: { bg: '#ffffff', border: '#ffffff', text: '#000000', icon: '#22C55E' },
+    error: { bg: '#ffffff', border: '#ffffff', text: '#000000', icon: '#EF4444' },
+    info: { bg: '#ffffff', border: '#ffffff', text: '#000000', icon: '#3B82F6' },
   };
 
   const color = colors[alert.type];

@@ -319,26 +319,16 @@ const styles = StyleSheet.create({
     right: 24, 
     width: 55, 
     height: 55, 
-    borderRadius: 22, 
+    borderRadius: 27.5, 
     backgroundColor: '#1F5CA9', 
     alignItems: 'center', 
     justifyContent: 'center',
-    
-    // Thêm phần này để tạo bóng nhẹ
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.30,
-    shadowRadius: 4.65,
-    elevation: 8, // Độ nổi trên Android
   },
 
   modalOverlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#FFFFFF', borderRadius: 24, width: '92%', maxWidth: 380, overflow: 'hidden' },
   modalHeader: { paddingHorizontal: 16, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F0F4F8', alignItems: 'center' },
-  modalHeaderTitle: { fontSize: 17, fontWeight: '700', color: '#1A202C', letterSpacing: 0.5 },
+  modalHeaderTitle: { fontSize: 17, fontWeight: '700', color: '#1F5CA9', letterSpacing: 0.5 },
   modalFormContent: { padding: 20, paddingBottom: 10 },
   modalSection: { marginBottom: 8 },
   modalLabel: { fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 12 },
@@ -384,8 +374,8 @@ const styles = StyleSheet.create({
   timeDisplayBoxLabel: { fontSize: 14, fontWeight: '700', color: '#000000', marginBottom: 4 },
   timeDisplayBoxValue: { fontSize: 20, fontWeight: '900', color: '#1F5CA9', letterSpacing: 0.5 },
 
-  modalBottomActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 20, paddingTop: 10, backgroundColor: '#FFFFFF' },
-  modalBottomButton: { paddingVertical: 12, paddingHorizontal: 16 },
+  modalBottomActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 20, paddingTop: 5, backgroundColor: '#FFFFFF' },
+  modalBottomButton: { paddingVertical: 10, paddingHorizontal: 16 },
   modalBottomButtonTextCancel: { fontSize: 16, fontWeight: '700', color: '#000000' },
   modalBottomButtonTextSubmit: { fontSize: 16, fontWeight: '700', color: '#1F5CA9' }
 });
