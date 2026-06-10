@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useEffect, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { AlertConfig } from '../hooks/use-custom-alert';
 
 interface CustomAlertProps {
@@ -26,9 +26,9 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({ visible, alert, onDism
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, alert]);
+  }, [visible, alert, fadeAnim]);
 
-  if (!visible || !alert) return null;
+  if (!alert) return null;
 
   const colors = {
     success: { bg: '#ffffff', border: '#ffffff', text: '#000000', icon: '#22C55E' },
@@ -40,8 +40,8 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({ visible, alert, onDism
   const iconName = alert.type === 'success' ? 'checkmark-circle' : alert.type === 'error' ? 'close-circle' : 'information-circle';
 
   return (
-    <View style={styles.overlay} pointerEvents="box-none">
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]} pointerEvents="auto">
+    <Animated.View style={[styles.alertWrapper, { opacity: fadeAnim }]} pointerEvents="auto">
+      <Pressable onPress={(e) => e.stopPropagation()}>
         <View style={[styles.alertBox, { backgroundColor: color.bg, borderColor: color.border }]}>
           <View style={styles.content}>
             <Ionicons name={iconName as any} size={24} color={color.icon} />
@@ -51,28 +51,18 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({ visible, alert, onDism
             </View>
           </View>
         </View>
-      </Animated.View>
-    </View>
+      </Pressable>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'flex-end',
-    paddingBottom: 120,
-    pointerEvents: 'box-none',
-  },
-  container: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+  alertWrapper: {
+    width: '100%',
     pointerEvents: 'auto',
   },
   alertBox: {
+    width: '100%',
     borderRadius: 16,
     borderWidth: 1.5,
     paddingHorizontal: 18,
@@ -81,7 +71,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 9999,
   },
   content: {
     flexDirection: 'row',

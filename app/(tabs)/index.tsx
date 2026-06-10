@@ -1,4 +1,5 @@
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { onValue, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -13,11 +14,10 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { CustomAlert } from '../../components/customalert';
 import { CustomSwitch } from '../../components/customswitch';
 import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
-import { useCustomAlert, useESPConnection } from '../../hooks';
+import { useESPConnection } from '../../hooks';
 
 interface ScheduleItem {
   id: number;
@@ -34,19 +34,25 @@ export default function ScheduleScreen() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMinute, setAlarmMinute] = useState(0);
-  const [alertVisible, setAlertVisible] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({ visible: false, type: 'success', title: '', message: '' });
+
+  const showSuccess = (title: string, message: string) =>
+    setFeedbackModal({ visible: true, type: 'success', title, message });
+  const showError = (title: string, message: string) =>
+    setFeedbackModal({ visible: true, type: 'error', title, message });
+  const hideFeedback = () => setFeedbackModal(prev => ({ ...prev, visible: false }));
 
   const [showBottomSheet, setShowBottomSheet] = useState(false);
   const [bottomSheetTargetId, setBottomSheetTargetId] = useState<number | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const bottomSheetAnim = useRef(new Animated.Value(300)).current;
 
-  const { currentAlert, showSuccess, showError } = useCustomAlert();
   useESPConnection();
-
-  useEffect(() => {
-    if (currentAlert) setAlertVisible(true);
-  }, [currentAlert]);
 
   useEffect(() => {
     const alarmRef = ref(db, 'DongHo/dsBaoThuc');
@@ -145,6 +151,18 @@ export default function ScheduleScreen() {
 
   const handleSubmit = () => {
     const alarmTimeStr = `${String(alarmHour).padStart(2, '0')}:${String(alarmMinute).padStart(2, '0')}`;
+
+    // Kiểm tra trùng giờ báo thức
+    const isDuplicate = schedule.some(item =>
+      item.alarmTime === alarmTimeStr &&
+      (!isEditMode || item.id !== editTargetId) // Cho phép cùng giờ nếu đang chỉnh sửa cùng mục
+    );
+
+    if (isDuplicate) {
+      showError('Lỗi', 'Giờ hẹn này đã tồn tại');
+      return;
+    }
+
     if (isEditMode && editTargetId !== null) {
       const updated = schedule.map(item =>
         item.id === editTargetId ? { ...item, alarmTime: alarmTimeStr, note } : item
@@ -158,6 +176,7 @@ export default function ScheduleScreen() {
       const updated = [...schedule, newItem];
       setSchedule(updated);
       saveScheduleToFirebase(updated);
+      showSuccess('Thành công', 'Đã thêm hẹn giờ');
     }
     setShowModal(false);
     setNote('');
@@ -169,8 +188,6 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
-      <CustomAlert visible={alertVisible} alert={currentAlert} onDismiss={() => setAlertVisible(false)} />
-
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Hẹn giờ</Text>
@@ -262,18 +279,31 @@ export default function ScheduleScreen() {
               <View style={styles.bottomSheetHandle} />
 
               {bottomSheetTarget && (
-                <View style={styles.bottomSheetInfo}>
-                  <View style={styles.bottomSheetInfoIconBox}>
-                    <FontAwesome6 name="bell" size={18} color="#1F5CA9" />
+                <View style={[
+                  styles.bsCardContainer, 
+                  bottomSheetTarget.enabled ? styles.cardEnabled : styles.cardDisabled
+                ]}>
+                  {/* Cột trái: Vùng hiển thị giờ màu vàng/xám giống bên ngoài */}
+                  <View style={[styles.timeColumn, !bottomSheetTarget.enabled && styles.timeColumnDisabled]}>
+                    <Text style={[styles.timeText, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>
+                      {bottomSheetTarget.alarmTime.split(':')[0]}
+                    </Text>
+                    <Text style={[styles.timeSep, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>:</Text>
+                    <Text style={[styles.timeText, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>
+                      {bottomSheetTarget.alarmTime.split(':')[1]}
+                    </Text>
                   </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.bottomSheetInfoTime}>{bottomSheetTarget.alarmTime}</Text>
+
+                  {/* Cột phải: Ghi chú tự động mở rộng, tự xuống dòng khi quá dài */}
+                  <View style={styles.noteColumn}>
                     {bottomSheetTarget.note ? (
-                      <Text style={styles.bottomSheetInfoNote} numberOfLines={1}>
+                      <Text style={[styles.bsNoteText, !bottomSheetTarget.enabled && styles.noteTextDisabled]}>
                         {bottomSheetTarget.note}
                       </Text>
                     ) : (
-                      <Text style={styles.bottomSheetInfoNotePlaceholder}>Không có ghi chú</Text>
+                      <Text style={[styles.notePlaceholder, !bottomSheetTarget.enabled && styles.noteTextDisabled]}>
+                        Không có ghi chú
+                      </Text>
                     )}
                   </View>
                 </View>
@@ -333,6 +363,19 @@ export default function ScheduleScreen() {
 
             <View style={styles.modalFormContent}>
               <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Ghi chú</Text>
+                <TextInput
+                  style={styles.noteInput}
+                  placeholder="Nhập ghi chú"
+                  placeholderTextColor="#A0AEC0"
+                  value={note}
+                  onChangeText={setNote}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+
+              <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Chọn thời gian</Text>
                 <View style={styles.timePickerContainer}>
                   <View style={styles.timePickerCol}>
@@ -358,19 +401,6 @@ export default function ScheduleScreen() {
                   </View>
                 </View>
               </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.modalLabel}>Ghi chú</Text>
-                <TextInput
-                  style={styles.noteInput}
-                  placeholder="Nhập ghi chú"
-                  placeholderTextColor="#A0AEC0"
-                  value={note}
-                  onChangeText={setNote}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
             </View>
 
             <View style={styles.modalBottomActions}>
@@ -391,11 +421,165 @@ export default function ScheduleScreen() {
             </View>
 
           </Pressable>
+
+          {/* FeedbackModal — hiện ngay trong modal nếu có lỗi */}
+          <FeedbackModal
+            visible={feedbackModal.visible}
+            type={feedbackModal.type}
+            title={feedbackModal.title}
+            message={feedbackModal.message}
+            onDismiss={hideFeedback}
+          />
         </Pressable>
       </Modal>
+
+      {/* FeedbackModal — hiện khi không có modal nào đang mở */}
+      {!showModal && (
+        <FeedbackModal
+          visible={feedbackModal.visible}
+          type={feedbackModal.type}
+          title={feedbackModal.title}
+          message={feedbackModal.message}
+          onDismiss={hideFeedback}
+        />
+      )}
     </View>
   );
 }
+
+interface FeedbackModalProps {
+  visible: boolean;
+  type: 'success' | 'error';
+  title: string;
+  message: string;
+  onDismiss: () => void;
+}
+
+function FeedbackModal({ visible, type, title, message, onDismiss }: FeedbackModalProps) {
+  const scale = useRef(new Animated.Value(0.88)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  const isSuccess = type === 'success';
+  const accentColor = isSuccess ? '#16A34A' : '#DC2626';
+  const iconBg = isSuccess ? '#DCFCE7' : '#FEE2E2';
+  const iconName = isSuccess ? 'checkmark-circle' : 'close-circle';
+  const btnBg = isSuccess ? '#1F5CA9' : '#DC2626';
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 100, friction: 10 }),
+        Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      ]).start();
+    } else {
+      scale.setValue(0.88);
+      opacity.setValue(0);
+    }
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onDismiss}>
+      <Pressable style={fbStyles.overlay} onPress={onDismiss}>
+        <Animated.View style={[fbStyles.box, { opacity, transform: [{ scale }] }]}>
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            {/* Icon */}
+            <View style={fbStyles.iconSection}>
+              <View style={[fbStyles.iconCircle, { backgroundColor: iconBg }]}>
+                <Ionicons name={iconName as any} size={44} color={accentColor} />
+              </View>
+            </View>
+            {/* Text */}
+            <View style={fbStyles.textSection}>
+              <Text style={fbStyles.title}>{title}</Text>
+              <Text style={fbStyles.message}>{message}</Text>
+            </View>
+            {/* Button */}
+            <View style={fbStyles.btnSection}>
+              <TouchableOpacity
+                style={[fbStyles.btn, { backgroundColor: btnBg }]}
+                onPress={onDismiss}
+                activeOpacity={0.85}
+              >
+                <Text style={fbStyles.btnText}>Đồng ý</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Animated.View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const fbStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,25,50,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  box: {
+    width: '85%', // Tăng nhẹ để có thêm không gian hiển thị
+    maxWidth: 340, // Tăng giới hạn chiều rộng tối đa
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  iconSection: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 16,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textSection: {
+    alignItems: 'center',
+    paddingHorizontal: 20, // Giảm nhẹ padding hai bên để text rộng đường chạy hơn
+    paddingBottom: 28,
+    width: '100%', // Đảm bảo vùng chứa chiếm trọn chiều rộng modal
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A202C',
+    marginBottom: 8,
+    textAlign: 'center',
+    flexWrap: 'wrap', // Ép chữ xuống dòng nếu tiêu đề quá dài
+  },
+  message: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 21,
+    fontWeight: '400',
+    flexWrap: 'wrap', // Ép text nội dung xuống dòng tự nhiên, không bị khuất chữ
+    width: '100%', // Rải đều vùng hiển thị text
+  },
+  btnSection: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  btn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  btnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.3,
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0F4FA' },
@@ -427,6 +611,22 @@ const styles = StyleSheet.create({
   cardEnabled: { backgroundColor: '#1F5CA9' },
   cardDisabled: { backgroundColor: '#DDE4F0' },
 
+  bsCardContainer: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 20,
+    marginBottom: 16, // Khoảng cách mượt mà với đường kẻ divider bên dưới
+    minHeight: 72,
+    overflow: 'hidden', // Giúp bo góc của cột màu vàng ăn khớp với thẻ cha
+  },
+
+  bsNoteText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ffffff',
+    lineHeight: 21,
+    flexWrap: 'wrap', // Đảm bảo chữ tự động xuống dòng mượt mà
+  },
   timeColumn: {
     width: 80,
     backgroundColor: '#FFF200',
@@ -507,7 +707,7 @@ const styles = StyleSheet.create({
     width: 55,
     height: 55,
     borderRadius: 27.5,
-    backgroundColor: '#1F5CA9',
+    backgroundColor: '#fff200',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -559,10 +759,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   bottomSheetInfoNote: {
-    fontSize: 13,
-    color: '#4A6FA5',
-    fontWeight: '500',
-    marginTop: 2,
+      fontSize: 13,
+      color: '#4A6FA5',
+      fontWeight: '500',
+      marginTop: 2,
+      flexWrap: 'wrap', // Đảm bảo chữ tự động xuống dòng mượt mà
   },
   bottomSheetInfoNotePlaceholder: {
     fontSize: 13,
@@ -581,10 +782,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 15,
     paddingHorizontal: 16,
-    backgroundColor: '#FFF5F5',
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#FED7D7',
+    borderColor: '#E2E8F0',
     marginBottom: 8,
   },
   bottomSheetDeleteText: {
@@ -593,11 +794,11 @@ const styles = StyleSheet.create({
     color: '#E53E3E',
   },
   confirmDeleteSection: {
-    backgroundColor: '#FFF5F5',
+    backgroundColor: '#F8FAFC',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#FED7D7',
+    borderColor: '#E2E8F0',
     marginBottom: 8,
   },
   confirmDeleteTitle: {
