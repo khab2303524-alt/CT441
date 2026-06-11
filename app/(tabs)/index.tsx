@@ -1,4 +1,5 @@
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onValue, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -32,6 +33,7 @@ export default function ScheduleScreen() {
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMinute, setAlarmMinute] = useState(0);
   const [feedbackModal, setFeedbackModal] = useState<{
@@ -54,6 +56,18 @@ export default function ScheduleScreen() {
 
   useESPConnection();
 
+  // Load notes từ AsyncStorage
+  useEffect(() => {
+    AsyncStorage.getItem('alarm_notes').then((raw) => {
+      if (raw) setLocalNotes(JSON.parse(raw));
+    });
+  }, []);
+
+  const saveLocalNotes = async (notes: Record<string, string>) => {
+    setLocalNotes(notes);
+    await AsyncStorage.setItem('alarm_notes', JSON.stringify(notes));
+  };
+
   useEffect(() => {
     const alarmRef = ref(db, 'DongHo/dsBaoThuc');
     const unsubscribe = onValue(alarmRef, (snapshot) => {
@@ -69,12 +83,16 @@ export default function ScheduleScreen() {
             loadedSchedule.push({
               id: idNum,
               alarmTime: formattedTime,
-              note: alarm.note || '',
+              note: '',  // sẽ merge từ localNotes bên dưới
               enabled: alarm.active ?? false,
             });
           }
         });
-        setSchedule(loadedSchedule.sort((a, b) => a.alarmTime.localeCompare(b.alarmTime)));
+        AsyncStorage.getItem('alarm_notes').then((raw) => {
+          const notes: Record<string, string> = raw ? JSON.parse(raw) : {};
+          const merged = loadedSchedule.map(item => ({ ...item, note: notes[item.alarmTime] || '' }));
+          setSchedule(merged.sort((a, b) => a.alarmTime.localeCompare(b.alarmTime)));
+        });
       } else {
         setSchedule([]);
       }
@@ -91,7 +109,6 @@ export default function ScheduleScreen() {
         active: item.enabled,
         gio: parseInt(hours, 10) || 0,
         phut: parseInt(minutes, 10) || 0,
-        note: item.note,
       };
     });
     set(ref(db, 'DongHo/dsBaoThuc'), alarmObjects)
@@ -142,9 +159,16 @@ export default function ScheduleScreen() {
   };
 
   const handleDeleteItem = (id: number) => {
+    const target = schedule.find(item => item.id === id);
     const updated = schedule.filter(item => item.id !== id);
     setSchedule(updated);
     saveScheduleToFirebase(updated);
+    // Xóa note khỏi AsyncStorage
+    if (target) {
+      const updatedNotes = { ...localNotes };
+      delete updatedNotes[target.alarmTime];
+      saveLocalNotes(updatedNotes);
+    }
     closeBottomSheet();
     showSuccess('Thành công', 'Đã xóa hẹn giờ');
   };
@@ -163,11 +187,17 @@ export default function ScheduleScreen() {
     }
 
     if (isEditMode && editTargetId !== null) {
+      const oldItem = schedule.find(item => item.id === editTargetId);
       const updated = schedule.map(item =>
         item.id === editTargetId ? { ...item, alarmTime: alarmTimeStr, note } : item
       );
       setSchedule(updated);
       saveScheduleToFirebase(updated);
+      // Cập nhật note trong AsyncStorage (xóa key cũ nếu đổi giờ)
+      const updatedNotes = { ...localNotes };
+      if (oldItem && oldItem.alarmTime !== alarmTimeStr) delete updatedNotes[oldItem.alarmTime];
+      updatedNotes[alarmTimeStr] = note;
+      saveLocalNotes(updatedNotes);
       showSuccess('Thành công', 'Đã cập nhật hẹn giờ');
     } else {
       const newId = Math.max(...schedule.map(s => s.id), 0) + 1;
@@ -175,6 +205,9 @@ export default function ScheduleScreen() {
       const updated = [...schedule, newItem];
       setSchedule(updated);
       saveScheduleToFirebase(updated);
+      // Lưu note mới vào AsyncStorage
+      const updatedNotes = { ...localNotes, [alarmTimeStr]: note };
+      saveLocalNotes(updatedNotes);
       showSuccess('Thành công', 'Đã thêm hẹn giờ');
     }
     setShowModal(false);
@@ -292,7 +325,7 @@ export default function ScheduleScreen() {
                     activeOpacity={0.7}
                     onPress={() => setShowConfirmDelete(true)}
                   >
-                    <FontAwesome6 name="trash" size={17} color="#ffffff" />
+                    <FontAwesome6 name="trash" size={17} color="#DC2626" />
                     <Text style={styles.bottomSheetDeleteText}>Xóa hẹn giờ</Text>
                   </TouchableOpacity>
                 </>
@@ -500,7 +533,8 @@ const styles = StyleSheet.create({
   },
   notePlaceholder: {
     fontSize: 14,
-    color: '#FFFFFF8C',
+    color: 'rgba(255,255,255,0.55)',
+    fontStyle: 'italic',
     fontWeight: '400',
   },
   noteTextDisabled: {
@@ -539,7 +573,7 @@ const styles = StyleSheet.create({
   // ── BOTTOM SHEET ──
   bottomSheetOverlay: {
     flex: 1,
-    backgroundColor: '#00000073',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
   bottomSheetContainer: {
@@ -579,6 +613,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '400',
     color: '#A0AEC0',
+    fontStyle: 'italic',
   },
 
   bottomSheetDivider: {
@@ -593,13 +628,13 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 13,
     borderRadius: 12,
-    backgroundColor: '#DC2626',
+    backgroundColor: '#F1F5F9',
     marginBottom: 8,
   },
   bottomSheetDeleteText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#ffffff',
+    color: '#DC2626',
   },
   confirmDeleteSection: {
     marginBottom: 8,
@@ -671,7 +706,7 @@ const styles = StyleSheet.create({
   // ── MODAL ──
   modalOverlay: {
     flex: 1,
-    backgroundColor: '#00000066',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
   },
