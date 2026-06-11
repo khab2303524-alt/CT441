@@ -500,8 +500,7 @@ const styles = StyleSheet.create({
   },
   notePlaceholder: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.55)',
-    fontStyle: 'italic',
+    color: '#FFFFFF8C',
     fontWeight: '400',
   },
   noteTextDisabled: {
@@ -540,7 +539,7 @@ const styles = StyleSheet.create({
   // ── BOTTOM SHEET ──
   bottomSheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: '#00000073',
     justifyContent: 'flex-end',
   },
   bottomSheetContainer: {
@@ -580,7 +579,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '400',
     color: '#A0AEC0',
-    fontStyle: 'italic',
   },
 
   bottomSheetDivider: {
@@ -673,7 +671,7 @@ const styles = StyleSheet.create({
   // ── MODAL ──
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: '#00000066',
     justifyContent: 'center',
     alignItems: 'center',
   },

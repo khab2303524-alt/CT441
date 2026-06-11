@@ -71,7 +71,7 @@ export function FeedbackModal({ visible, type, title, message, onDismiss }: Feed
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(10,14,30,0.55)',
+    backgroundColor: '#0A0E1E8C',
     justifyContent: 'center',
     alignItems: 'center',
   },
