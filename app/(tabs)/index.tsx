@@ -1,5 +1,4 @@
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { onValue, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -15,6 +14,7 @@ import {
   View
 } from 'react-native';
 import { CustomSwitch } from '../../components/customswitch';
+import { FeedbackModal } from '../../components/feedbackmodal';
 import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
 import { useESPConnection } from '../../hooks';
@@ -152,10 +152,9 @@ export default function ScheduleScreen() {
   const handleSubmit = () => {
     const alarmTimeStr = `${String(alarmHour).padStart(2, '0')}:${String(alarmMinute).padStart(2, '0')}`;
 
-    // Kiểm tra trùng giờ báo thức
     const isDuplicate = schedule.some(item =>
       item.alarmTime === alarmTimeStr &&
-      (!isEditMode || item.id !== editTargetId) // Cho phép cùng giờ nếu đang chỉnh sửa cùng mục
+      (!isEditMode || item.id !== editTargetId)
     );
 
     if (isDuplicate) {
@@ -214,7 +213,6 @@ export default function ScheduleScreen() {
               onLongPress={() => openBottomSheet(item.id)}
               delayLongPress={350}
             >
-              {/* Cột trái: vùng vàng hiển thị giờ */}
               <View style={[styles.timeColumn, !item.enabled && styles.timeColumnDisabled]}>
                 <Text style={[styles.timeText, !item.enabled && styles.timeTextDisabled]}>
                   {item.alarmTime.split(':')[0]}
@@ -225,7 +223,6 @@ export default function ScheduleScreen() {
                 </Text>
               </View>
 
-              {/* Cột giữa: ghi chú */}
               <View style={styles.noteColumn}>
                 {item.note ? (
                   <Text style={[styles.noteText, !item.enabled && styles.noteTextDisabled]}>
@@ -238,7 +235,6 @@ export default function ScheduleScreen() {
                 )}
               </View>
 
-              {/* Cột phải: switch */}
               <View style={styles.switchColumn}>
                 <CustomSwitch
                   value={item.enabled}
@@ -279,33 +275,11 @@ export default function ScheduleScreen() {
               <View style={styles.bottomSheetHandle} />
 
               {bottomSheetTarget && (
-                <View style={[
-                  styles.bsCardContainer, 
-                  bottomSheetTarget.enabled ? styles.cardEnabled : styles.cardDisabled
-                ]}>
-                  {/* Cột trái: Vùng hiển thị giờ màu vàng/xám giống bên ngoài */}
-                  <View style={[styles.timeColumn, !bottomSheetTarget.enabled && styles.timeColumnDisabled]}>
-                    <Text style={[styles.timeText, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>
-                      {bottomSheetTarget.alarmTime.split(':')[0]}
-                    </Text>
-                    <Text style={[styles.timeSep, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>:</Text>
-                    <Text style={[styles.timeText, !bottomSheetTarget.enabled && styles.timeTextDisabled]}>
-                      {bottomSheetTarget.alarmTime.split(':')[1]}
-                    </Text>
-                  </View>
-
-                  {/* Cột phải: Ghi chú tự động mở rộng, tự xuống dòng khi quá dài */}
-                  <View style={styles.noteColumn}>
-                    {bottomSheetTarget.note ? (
-                      <Text style={[styles.bsNoteText, !bottomSheetTarget.enabled && styles.noteTextDisabled]}>
-                        {bottomSheetTarget.note}
-                      </Text>
-                    ) : (
-                      <Text style={[styles.notePlaceholder, !bottomSheetTarget.enabled && styles.noteTextDisabled]}>
-                        Không có ghi chú
-                      </Text>
-                    )}
-                  </View>
+                <View style={styles.bsInfoSimple}>
+                  <Text style={styles.bsInfoTime}>{bottomSheetTarget.alarmTime}</Text>
+                  <Text style={bottomSheetTarget.note ? styles.bsInfoNote : styles.bsInfoNotePlaceholder}>
+                    {bottomSheetTarget.note || 'Không có ghi chú'}
+                  </Text>
                 </View>
               )}
 
@@ -318,14 +292,19 @@ export default function ScheduleScreen() {
                     activeOpacity={0.7}
                     onPress={() => setShowConfirmDelete(true)}
                   >
-                    <FontAwesome6 name="trash" size={17} color="#E53E3E" />
+                    <FontAwesome6 name="trash" size={17} color="#ffffff" />
                     <Text style={styles.bottomSheetDeleteText}>Xóa hẹn giờ</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <View style={styles.confirmDeleteSection}>
-                  <Text style={styles.confirmDeleteTitle}>Xóa giờ hẹn này?</Text>
-                  <Text style={styles.confirmDeleteSub}>Sau khi xóa sẽ không thể hoàn tác</Text>
+                  <View style={styles.confirmIconRow}>
+                    <View style={styles.confirmIconCircle}>
+                      <FontAwesome6 name="trash" size={15} color="#DC2626" />
+                    </View>
+                    <Text style={styles.confirmDeleteTitle}>Xóa giờ hẹn này?</Text>
+                  </View>
+                  <Text style={styles.confirmDeleteSub}>Thao tác này không thể hoàn tác</Text>
                   <View style={styles.confirmDeleteBtnRow}>
                     <TouchableOpacity
                       style={styles.confirmCancelBtn}
@@ -422,7 +401,6 @@ export default function ScheduleScreen() {
 
           </Pressable>
 
-          {/* FeedbackModal — hiện ngay trong modal nếu có lỗi */}
           <FeedbackModal
             visible={feedbackModal.visible}
             type={feedbackModal.type}
@@ -433,7 +411,6 @@ export default function ScheduleScreen() {
         </Pressable>
       </Modal>
 
-      {/* FeedbackModal — hiện khi không có modal nào đang mở */}
       {!showModal && (
         <FeedbackModal
           visible={feedbackModal.visible}
@@ -446,140 +423,6 @@ export default function ScheduleScreen() {
     </View>
   );
 }
-
-interface FeedbackModalProps {
-  visible: boolean;
-  type: 'success' | 'error';
-  title: string;
-  message: string;
-  onDismiss: () => void;
-}
-
-function FeedbackModal({ visible, type, title, message, onDismiss }: FeedbackModalProps) {
-  const scale = useRef(new Animated.Value(0.88)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  const isSuccess = type === 'success';
-  const accentColor = isSuccess ? '#16A34A' : '#DC2626';
-  const iconBg = isSuccess ? '#DCFCE7' : '#FEE2E2';
-  const iconName = isSuccess ? 'checkmark-circle' : 'close-circle';
-  const btnBg = isSuccess ? '#1F5CA9' : '#DC2626';
-
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 100, friction: 10 }),
-        Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
-      ]).start();
-    } else {
-      scale.setValue(0.88);
-      opacity.setValue(0);
-    }
-  }, [visible]);
-
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onDismiss}>
-      <Pressable style={fbStyles.overlay} onPress={onDismiss}>
-        <Animated.View style={[fbStyles.box, { opacity, transform: [{ scale }] }]}>
-          <Pressable onPress={(e) => e.stopPropagation()}>
-            {/* Icon */}
-            <View style={fbStyles.iconSection}>
-              <View style={[fbStyles.iconCircle, { backgroundColor: iconBg }]}>
-                <Ionicons name={iconName as any} size={44} color={accentColor} />
-              </View>
-            </View>
-            {/* Text */}
-            <View style={fbStyles.textSection}>
-              <Text style={fbStyles.title}>{title}</Text>
-              <Text style={fbStyles.message}>{message}</Text>
-            </View>
-            {/* Button */}
-            <View style={fbStyles.btnSection}>
-              <TouchableOpacity
-                style={[fbStyles.btn, { backgroundColor: btnBg }]}
-                onPress={onDismiss}
-                activeOpacity={0.85}
-              >
-                <Text style={fbStyles.btnText}>Đồng ý</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
-}
-
-const fbStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15,25,50,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  box: {
-    width: '85%', // Tăng nhẹ để có thêm không gian hiển thị
-    maxWidth: 340, // Tăng giới hạn chiều rộng tối đa
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  iconSection: {
-    alignItems: 'center',
-    paddingTop: 32,
-    paddingBottom: 16,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textSection: {
-    alignItems: 'center',
-    paddingHorizontal: 20, // Giảm nhẹ padding hai bên để text rộng đường chạy hơn
-    paddingBottom: 28,
-    width: '100%', // Đảm bảo vùng chứa chiếm trọn chiều rộng modal
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A202C',
-    marginBottom: 8,
-    textAlign: 'center',
-    flexWrap: 'wrap', // Ép chữ xuống dòng nếu tiêu đề quá dài
-  },
-  message: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 21,
-    fontWeight: '400',
-    flexWrap: 'wrap', // Ép text nội dung xuống dòng tự nhiên, không bị khuất chữ
-    width: '100%', // Rải đều vùng hiển thị text
-  },
-  btnSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  btn: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  btnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.3,
-  },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0F4FA' },
@@ -600,7 +443,6 @@ const styles = StyleSheet.create({
 
   scheduleListContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 120 },
 
-  // ── THẺ HẸN GIỜ ──
   cardContainer: {
     flexDirection: 'row',
     alignItems: 'stretch',
@@ -611,22 +453,6 @@ const styles = StyleSheet.create({
   cardEnabled: { backgroundColor: '#1F5CA9' },
   cardDisabled: { backgroundColor: '#DDE4F0' },
 
-  bsCardContainer: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderRadius: 20,
-    marginBottom: 16, // Khoảng cách mượt mà với đường kẻ divider bên dưới
-    minHeight: 72,
-    overflow: 'hidden', // Giúp bo góc của cột màu vàng ăn khớp với thẻ cha
-  },
-
-  bsNoteText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-    lineHeight: 21,
-    flexWrap: 'wrap', // Đảm bảo chữ tự động xuống dòng mượt mà
-  },
   timeColumn: {
     width: 80,
     backgroundColor: '#FFF200',
@@ -698,7 +524,6 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: '#A0AEC0', fontWeight: '600' },
   emptySubText: { fontSize: 13, color: '#CBD5E0', marginTop: 6 },
 
-  // ── FAB ──
   fab: {
     position: 'absolute',
     bottom: 30,
@@ -734,43 +559,30 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 20,
   },
-  bottomSheetInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#F0F6FF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
+
+  bsInfoSimple: {
+    paddingHorizontal: 4,
+    paddingBottom: 20,
   },
-  bottomSheetInfoIconBox: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#FFF200',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  bottomSheetInfoTime: {
-    fontSize: 24,
-    fontWeight: '700',
+  bsInfoTime: {
+    fontSize: 40,
+    fontWeight: '800',
     color: '#1F5CA9',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    marginBottom: 4,
   },
-  bottomSheetInfoNote: {
-      fontSize: 13,
-      color: '#4A6FA5',
-      fontWeight: '500',
-      marginTop: 2,
-      flexWrap: 'wrap', // Đảm bảo chữ tự động xuống dòng mượt mà
+  bsInfoNote: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#4A5568',
   },
-  bottomSheetInfoNotePlaceholder: {
-    fontSize: 13,
+  bsInfoNotePlaceholder: {
+    fontSize: 15,
+    fontWeight: '400',
     color: '#A0AEC0',
     fontStyle: 'italic',
-    marginTop: 2,
   },
+
   bottomSheetDivider: {
     height: 1,
     backgroundColor: '#F0F4F8',
@@ -779,84 +591,83 @@ const styles = StyleSheet.create({
   bottomSheetDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
     marginBottom: 8,
   },
   bottomSheetDeleteText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#E53E3E',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#ffffff',
   },
   confirmDeleteSection: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     marginBottom: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
   },
-  confirmDeleteTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#C53030',
+  confirmIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 4,
   },
+  confirmIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmDeleteTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+  },
   confirmDeleteSub: {
-    fontSize: 13,
-    color: '#E53E3E',
-    opacity: 0.8,
-    marginBottom: 16,
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 14,
+    paddingLeft: 44,
+    lineHeight: 18,
   },
   confirmDeleteBtnRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   confirmCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 11,
+    borderRadius: 10,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#E2E8F0',
     alignItems: 'center',
   },
   confirmCancelBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#4A5568',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
   },
   confirmDeleteBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#E53E3E',
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   confirmDeleteBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '500',
     color: '#ffffff',
-  },
-  bottomSheetCancelRow: {
-    alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 4,
-    borderRadius: 14,
-    backgroundColor: '#F7FAFC',
-  },
-  bottomSheetCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#718096',
   },
 
   // ── MODAL ──
