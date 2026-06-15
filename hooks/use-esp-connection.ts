@@ -2,13 +2,6 @@ import { onValue, ref } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import { db } from '../config/firebaseConfig';
 
-let globalLastUpdateTime = Date.now();
-let globalIsESPConnected = false;
-let connectionCheckInterval: any = null; // Chuyển thành any để tránh xung đột môi trường
-let unsubscribeFirebaseTime: (() => void) | null = null;
-let localClockInterval: any = null;       // Chuyển thành any để tránh xung đột môi trường
-let connectionStateListeners: Set<(status: boolean) => void> = new Set();
-
 // Định dạng cấu trúc dữ liệu thời gian
 interface TimeData {
   Gio: number;
@@ -20,126 +13,119 @@ interface TimeData {
   Thu: number;
 }
 
-let globalTimeData: TimeData | null = null;
-let timeDataListeners: Set<(data: any) => void> = new Set();
+// ===== TRẠNG THÁI TOÀN CỤC =====
+// "Mốc" thời gian gần nhất nhận được từ Firebase + thời điểm (theo clock của App) nhận mốc đó.
+// Giờ hiển thị luôn = mốc + số giây THỰC đã trôi qua kể từ lúc nhận mốc -> không bao giờ "đứng hình",
+// kể cả khi ESP32 mất kết nối, vì không phụ thuộc vào việc có dữ liệu mới hay không.
+let globalAnchorData: TimeData | null = null;
+let globalAnchorTimestamp = Date.now();
 
-// Hàm kiểm tra năm nhuận để tính ngày trong tháng chính xác khi tự đếm tiến
-const isLeapYear = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-const getDaysInMonth = (month: number, year: number) => {
-  return [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+let globalLastUpdateTime = Date.now();
+let globalIsESPConnected = false;
+
+let tickInterval: any = null;
+let connectionCheckInterval: any = null;
+let firebaseListenerActive = false;
+
+let connectionStateListeners: Set<(status: boolean) => void> = new Set();
+let timeDataListeners: Set<(data: TimeData) => void> = new Set();
+
+// Chỉ dùng để hiển thị trạng thái "Đã kết nối / Mất kết nối", KHÔNG ảnh hưởng đến việc đồng hồ chạy
+const DISCONNECT_THRESHOLD = 2500;
+
+// Cộng/trừ N giây vào một mốc TimeData, tự xử lý tràn phút/giờ/ngày/tháng/năm/năm nhuận qua Date của JS
+const addSeconds = (base: TimeData, secondsToAdd: number): TimeData => {
+  const baseDate = new Date(base.Nam, base.Thang - 1, base.Ngay, base.Gio, base.Phut, base.Giay);
+  const newDate = new Date(baseDate.getTime() + secondsToAdd * 1000);
+  return {
+    Gio: newDate.getHours(),
+    Phut: newDate.getMinutes(),
+    Giay: newDate.getSeconds(),
+    Ngay: newDate.getDate(),
+    Thang: newDate.getMonth() + 1,
+    Nam: newDate.getFullYear(),
+    Thu: newDate.getDay(),
+  };
 };
 
-// ⏱️ BỘ ĐẾM GIỜ NỘI BỘ: Tự động cộng 1 giây từ dữ liệu Firebase cuối cùng
-const cộngMộtGiây = (current: TimeData): TimeData => {
-  let { Gio, Phut, Giay, Ngay, Thang, Nam, Thu } = current;
+const toMillis = (t: TimeData) =>
+  new Date(t.Nam, t.Thang - 1, t.Ngay, t.Gio, t.Phut, t.Giay).getTime();
 
-  Giay += 1;
-  if (Giay >= 60) {
-    Giay = 0;
-    Phut += 1;
-    if (Phut >= 60) {
-      Phut = 0;
-      Gio += 1;
-      if (Gio >= 24) {
-        Gio = 0;
-        Thu = (Thu + 1) % 7; // Thứ trong tuần (0: Chủ Nhật, 1: Thứ 2...)
-        Ngay += 1;
-
-        const maxDays = getDaysInMonth(Thang, Nam);
-        if (Ngay > maxDays) {
-          Ngay = 1;
-          Thang += 1;
-          if (Thang > 12) {
-            Thang = 1;
-            Nam += 1;
-          }
-        }
-      }
-    }
-  }
-
-  return { Gio, Phut, Giay, Ngay, Thang, Nam, Thu };
+// Tính giờ đang hiển thị tại thời điểm gọi = mốc gần nhất + số giây thực đã trôi qua
+const tinhGioHienTai = (): TimeData | null => {
+  if (!globalAnchorData) return null;
+  const elapsedSeconds = Math.floor((Date.now() - globalAnchorTimestamp) / 1000);
+  return addSeconds(globalAnchorData, elapsedSeconds);
 };
 
-// Khởi chạy bộ đếm chạy ngầm khi mất kết nối ESP
-const startLocalClockUpdate = () => {
-  if (localClockInterval) return;
-
-  localClockInterval = setInterval(() => {
-    // Chỉ tự đếm tiến nếu đang MẤT kết nối và đang có dữ liệu gốc
-    if (!globalIsESPConnected && globalTimeData) {
-      globalTimeData = cộngMộtGiây(globalTimeData);
-      // Phát thông báo cập nhật giao diện liên tục
-      timeDataListeners.forEach(listener => listener(globalTimeData));
+// Bộ đếm chạy liên tục mỗi giây, dựa trên thời gian thực trôi qua (Date.now())
+// -> luôn chạy đều, không phụ thuộc trạng thái kết nối ESP
+const startTick = () => {
+  if (tickInterval) return;
+  tickInterval = setInterval(() => {
+    const hienTai = tinhGioHienTai();
+    if (hienTai) {
+      timeDataListeners.forEach(listener => listener(hienTai));
     }
   }, 1000);
 };
 
-const stopLocalClockUpdate = () => {
-  if (localClockInterval) {
-    clearInterval(localClockInterval);
-    localClockInterval = null;
-  }
-};
-
-// Kiểm tra trạng thái kết nối dựa trên tần suất cập nhật dữ liệu từ Firebase
+// Kiểm tra trạng thái kết nối dựa trên tần suất cập nhật dữ liệu từ Firebase (chỉ để hiển thị badge)
 const startGlobalConnectionCheck = () => {
   if (connectionCheckInterval) return;
 
   connectionCheckInterval = setInterval(() => {
     const timeSinceLastUpdate = Date.now() - globalLastUpdateTime;
-    // Nếu quá 2.5 giây Firebase không có biến động => Coi như ESP32 mất kết nối
-    const newStatus = timeSinceLastUpdate <= 2500;
+    const newStatus = timeSinceLastUpdate <= DISCONNECT_THRESHOLD;
 
     if (newStatus !== globalIsESPConnected) {
       globalIsESPConnected = newStatus;
-
-      if (!newStatus) {
-        // KHI MẤT KẾT NỐI: Kích hoạt bộ đếm thời gian nội bộ chạy tịnh tiến từ vết Firebase cũ
-        startLocalClockUpdate();
-      } else {
-        // KHI CÓ KẾT NỐI LẠI: Tắt bộ tự đếm, nhường quyền cập nhật chính xác cho Firebase
-        stopLocalClockUpdate();
-      }
-
       connectionStateListeners.forEach(listener => listener(newStatus));
     }
-  }, 500); // Kiểm tra định kỳ mỗi 500ms
+  }, 500);
 };
 
 // Lắng nghe dữ liệu realtime từ Firebase
-let firebaseListenerActive = false;
 const setupFirebaseListener = () => {
   if (firebaseListenerActive) return;
   firebaseListenerActive = true;
 
   const timeRef = ref(db, 'DongHo/ThoiGian');
-  unsubscribeFirebaseTime = onValue(timeRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      globalLastUpdateTime = Date.now();
+  onValue(timeRef, (snapshot) => {
+    if (!snapshot.exists()) return;
 
-      if (data && data.GioGiac && data.Date) {
-        // Cập nhật mốc thời gian chuẩn từ Firebase làm mốc gốc mới nhất
-        globalTimeData = {
-          Gio: data.GioGiac.Gio,
-          Phut: data.GioGiac.Phut,
-          Giay: data.GioGiac.Giay,
-          Ngay: data.Date.Ngay,
-          Thang: data.Date.Thang,
-          Nam: data.Date.Nam,
-          Thu: data.Date.Thu,
-        };
+    const data = snapshot.val();
+    if (!data?.GioGiac || !data?.Date) return;
 
-        if (!globalIsESPConnected) {
-          stopLocalClockUpdate();
-        }
-        globalIsESPConnected = true;
-
-        // Gửi dữ liệu cập nhật đến màn hình hiển thị
-        timeDataListeners.forEach(listener => listener(globalTimeData));
-      }
+    globalLastUpdateTime = Date.now();
+    if (!globalIsESPConnected) {
+      globalIsESPConnected = true;
       connectionStateListeners.forEach(listener => listener(true));
+    }
+
+    const moiNhan: TimeData = {
+      Gio: data.GioGiac.Gio,
+      Phut: data.GioGiac.Phut,
+      Giay: data.GioGiac.Giay,
+      Ngay: data.Date.Ngay,
+      Thang: data.Date.Thang,
+      Nam: data.Date.Nam,
+      Thu: data.Date.Thu,
+    };
+
+    // Tránh hiển thị NHẢY LÙI giây: nếu dữ liệu mới (do trễ mạng) nhỏ hơn giờ đang hiển thị,
+    // giữ nguyên giờ đang hiển thị làm mốc mới, chỉ "reset" lại đồng hồ đếm thực về thời điểm này
+    const dangHienThi = tinhGioHienTai();
+    if (dangHienThi && toMillis(moiNhan) < toMillis(dangHienThi)) {
+      globalAnchorData = dangHienThi;
+    } else {
+      globalAnchorData = moiNhan;
+    }
+    globalAnchorTimestamp = Date.now();
+
+    const hienTai = tinhGioHienTai();
+    if (hienTai) {
+      timeDataListeners.forEach(listener => listener(hienTai));
     }
   });
 };
@@ -150,6 +136,7 @@ export const useESPConnection = () => {
   useEffect(() => {
     startGlobalConnectionCheck();
     setupFirebaseListener();
+    startTick();
 
     const listener = (status: boolean) => setIsConnected(status);
     connectionStateListeners.add(listener);
@@ -163,18 +150,19 @@ export const useESPConnection = () => {
 };
 
 export const useESPTime = () => {
-  const [timeData, setTimeData] = useState<TimeData | null>(globalTimeData);
+  const [timeData, setTimeData] = useState<TimeData | null>(tinhGioHienTai());
 
   useEffect(() => {
     startGlobalConnectionCheck();
     setupFirebaseListener();
+    startTick();
 
     const listener = (data: TimeData) => setTimeData(data);
     timeDataListeners.add(listener);
 
-    // Điền dữ liệu tức thời nếu đã có sẵn trong bộ nhớ đệm global
-    if (globalTimeData) {
-      setTimeData(globalTimeData);
+    const hienTai = tinhGioHienTai();
+    if (hienTai) {
+      setTimeData(hienTai);
     }
 
     return () => {

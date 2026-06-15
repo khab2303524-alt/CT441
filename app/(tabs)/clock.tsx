@@ -78,13 +78,14 @@ export default function ClockScreen() {
 
   const saveTime = async () => {
     try {
-      const timeRef = ref(db, 'DongHo/ThoiGian/GioGiac');
-      await update(timeRef, {
+      const datGioRef = ref(db, 'DongHo/DatGio');
+      await update(datGioRef, {
         Gio: editHours,
         Phut: editMinutes,
         Giay: editSeconds,
+        capNhat: true,
       });
-      showSuccess('Thành công', 'Cập nhật giờ thành công');
+      showSuccess('Thành công', 'Đã gửi lệnh chỉnh giờ đến thiết bị');
       setEditModalVisible(false);
     } catch (error) {
       showError('Lỗi', 'Không thể cập nhật giờ');
@@ -100,7 +101,7 @@ export default function ClockScreen() {
           <Text style={styles.headerTitle}>Đồng hồ</Text>
           <Text style={styles.headerSubtitle}>Thời gian và môi trường</Text>
         </View>
-        <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" />
+        {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

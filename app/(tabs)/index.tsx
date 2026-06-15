@@ -225,7 +225,7 @@ export default function ScheduleScreen() {
           <Text style={styles.headerTitle}>Hẹn giờ</Text>
           <Text style={styles.headerSubtitle}>Chuông báo tiết học</Text>
         </View>
-        <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" />
+        {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
       </View>
 
       <ScrollView
