@@ -16,7 +16,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.khaslana.App"
+      "package": "com.trafankha.App"
     },
     "web": {
       "output": "static",
@@ -55,8 +55,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6905a5db-dbb7-44f0-b407-5ec125ed1880"
+        "projectId": "122080a1-10d2-4145-8208-758205c8e77b"
       }
-    }
+    },
+    "owner": "trafankha"
   }
 }
