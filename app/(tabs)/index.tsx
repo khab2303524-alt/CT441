@@ -20,11 +20,15 @@ import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
 import { useESPConnection } from '../../hooks';
 
+// 0 = Chủ Nhật, 1 = Thứ 2 ... 6 = Thứ 7  (khớp với now.dayOfTheWeek() của Arduino DS3231)
+const DAYS_LABEL = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
 interface ScheduleItem {
   id: number;
   alarmTime: string;
   note: string;
   enabled: boolean;
+  days: number[];   // mảng rỗng [] = chỉ 1 lần, có phần tử = lặp lại các thứ đó
 }
 
 export default function ScheduleScreen() {
@@ -36,6 +40,7 @@ export default function ScheduleScreen() {
   const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
   const [alarmHour, setAlarmHour] = useState(7);
   const [alarmMinute, setAlarmMinute] = useState(0);
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [feedbackModal, setFeedbackModal] = useState<{
     visible: boolean;
     type: 'success' | 'error';
@@ -83,8 +88,9 @@ export default function ScheduleScreen() {
             loadedSchedule.push({
               id: idNum,
               alarmTime: formattedTime,
-              note: '',  // sẽ merge từ localNotes bên dưới
+              note: '',
               enabled: alarm.active ?? false,
+              days: Array.isArray(alarm.thu) ? alarm.thu : [],
             });
           }
         });
@@ -109,10 +115,17 @@ export default function ScheduleScreen() {
         active: item.enabled,
         gio: parseInt(hours, 10) || 0,
         phut: parseInt(minutes, 10) || 0,
+        thu: item.days,       // mảng [] hoặc [0,1,2...]
       };
     });
     set(ref(db, 'DongHo/dsBaoThuc'), alarmObjects)
       .catch((error) => showError('Lỗi Firebase', error.message));
+  };
+
+  const toggleDay = (day: number) => {
+    setSelectedDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
   };
 
   const openBottomSheet = (id: number) => {
@@ -145,6 +158,7 @@ export default function ScheduleScreen() {
     setAlarmHour(7);
     setAlarmMinute(0);
     setNote('');
+    setSelectedDays([]);
     setShowModal(true);
   };
 
@@ -153,6 +167,7 @@ export default function ScheduleScreen() {
     setAlarmHour(h);
     setAlarmMinute(m);
     setNote(item.note);
+    setSelectedDays([...item.days]);
     setEditTargetId(item.id);
     setIsEditMode(true);
     setShowModal(true);
@@ -163,7 +178,6 @@ export default function ScheduleScreen() {
     const updated = schedule.filter(item => item.id !== id);
     setSchedule(updated);
     saveScheduleToFirebase(updated);
-    // Xóa note khỏi AsyncStorage
     if (target) {
       const updatedNotes = { ...localNotes };
       delete updatedNotes[target.alarmTime];
@@ -186,14 +200,17 @@ export default function ScheduleScreen() {
       return;
     }
 
+    const sortedDays = [...selectedDays].sort((a, b) => a - b);
+
     if (isEditMode && editTargetId !== null) {
       const oldItem = schedule.find(item => item.id === editTargetId);
       const updated = schedule.map(item =>
-        item.id === editTargetId ? { ...item, alarmTime: alarmTimeStr, note } : item
+        item.id === editTargetId
+          ? { ...item, alarmTime: alarmTimeStr, note, days: sortedDays }
+          : item
       );
       setSchedule(updated);
       saveScheduleToFirebase(updated);
-      // Cập nhật note trong AsyncStorage (xóa key cũ nếu đổi giờ)
       const updatedNotes = { ...localNotes };
       if (oldItem && oldItem.alarmTime !== alarmTimeStr) delete updatedNotes[oldItem.alarmTime];
       updatedNotes[alarmTimeStr] = note;
@@ -201,11 +218,10 @@ export default function ScheduleScreen() {
       showSuccess('Thành công', 'Đã cập nhật hẹn giờ');
     } else {
       const newId = Math.max(...schedule.map(s => s.id), 0) + 1;
-      const newItem: ScheduleItem = { id: newId, alarmTime: alarmTimeStr, note, enabled: true };
+      const newItem: ScheduleItem = { id: newId, alarmTime: alarmTimeStr, note, enabled: true, days: sortedDays };
       const updated = [...schedule, newItem];
       setSchedule(updated);
       saveScheduleToFirebase(updated);
-      // Lưu note mới vào AsyncStorage
       const updatedNotes = { ...localNotes, [alarmTimeStr]: note };
       saveLocalNotes(updatedNotes);
       showSuccess('Thành công', 'Đã thêm hẹn giờ');
@@ -214,6 +230,16 @@ export default function ScheduleScreen() {
     setNote('');
     setAlarmHour(7);
     setAlarmMinute(0);
+    setSelectedDays([]);
+  };
+
+  // Hiển thị nhãn thứ gọn trên card (VD: "T2 T4 T6", "Hằng ngày", "1 lần")
+  const formatDaysLabel = (days: number[]) => {
+    if (days.length === 0) return '1 lần';
+    if (days.length === 7) return 'Hằng ngày';
+    if (days.length === 5 && ![0, 6].some(d => days.includes(d))) return 'T2 – T6';
+    if (days.length === 2 && days.includes(0) && days.includes(6)) return 'T7 & CN';
+    return days.map(d => DAYS_LABEL[d]).join(' ');
   };
 
   const bottomSheetTarget = schedule.find(s => s.id === bottomSheetTargetId);
@@ -225,7 +251,7 @@ export default function ScheduleScreen() {
           <Text style={styles.headerTitle}>Hẹn giờ</Text>
           <Text style={styles.headerSubtitle}>Chuông báo tiết học</Text>
         </View>
-        {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
+        <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" />
       </View>
 
       <ScrollView
@@ -266,6 +292,11 @@ export default function ScheduleScreen() {
                     Không có ghi chú
                   </Text>
                 )}
+                {/* Nhãn thứ lặp lại */}
+                <Text style={[styles.daysLabel, !item.enabled && styles.daysLabelDisabled]}>
+                  <FontAwesome6 name="rotate" size={10} color={item.enabled ? '#FFF200' : '#8899B0'} />
+                  {'  '}{formatDaysLabel(item.days)}
+                </Text>
               </View>
 
               <View style={styles.switchColumn}>
@@ -312,6 +343,10 @@ export default function ScheduleScreen() {
                   <Text style={styles.bsInfoTime}>{bottomSheetTarget.alarmTime}</Text>
                   <Text style={bottomSheetTarget.note ? styles.bsInfoNote : styles.bsInfoNotePlaceholder}>
                     {bottomSheetTarget.note || 'Không có ghi chú'}
+                  </Text>
+                  <Text style={styles.bsDaysLabel}>
+                    <FontAwesome6 name="rotate" size={11} color="#1F5CA9" />
+                    {'  '}{formatDaysLabel(bottomSheetTarget.days)}
                   </Text>
                 </View>
               )}
@@ -413,6 +448,28 @@ export default function ScheduleScreen() {
                   </View>
                 </View>
               </View>
+
+              {/* CHỌN NGÀY LẶP LẠI */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Lặp lại</Text>
+                <View style={styles.dayPickerRow}>
+                  {DAYS_LABEL.map((label, index) => {
+                    const active = selectedDays.includes(index);
+                    return (
+                      <TouchableOpacity
+                        key={index}
+                        style={[styles.dayBtn, active && styles.dayBtnActive]}
+                        onPress={() => toggleDay(index)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.dayBtnText, active && styles.dayBtnTextActive]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
             </View>
 
             <View style={styles.modalBottomActions}>
@@ -498,48 +555,25 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 19,
     borderBottomLeftRadius: 19,
   },
-  timeColumnDisabled: {
-    backgroundColor: '#C8D3E8',
-  },
-  timeText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1F5CA9',
-    letterSpacing: 0,
-    lineHeight: 28,
-  },
-  timeSep: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1F5CA9',
-    lineHeight: 28,
-    marginBottom: 2,
-  },
-  timeTextDisabled: {
-    color: '#7A8FAD',
-  },
+  timeColumnDisabled: { backgroundColor: '#C8D3E8' },
+  timeText: { fontSize: 18, fontWeight: '800', color: '#1F5CA9', lineHeight: 28 },
+  timeSep: { fontSize: 20, fontWeight: '800', color: '#1F5CA9', lineHeight: 28, marginBottom: 2 },
+  timeTextDisabled: { color: '#7A8FAD' },
 
   noteColumn: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    gap: 4,
   },
-  noteText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-    lineHeight: 21,
-  },
+  noteText: { fontSize: 15, fontWeight: '600', color: '#ffffff', lineHeight: 21 },
   notePlaceholder: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.55)',
-    fontStyle: 'italic',
-    fontWeight: '400',
+    fontSize: 14, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', fontWeight: '400',
   },
-  noteTextDisabled: {
-    color: '#8899B0',
-  },
+  noteTextDisabled: { color: '#8899B0' },
+  daysLabel: { fontSize: 12, fontWeight: '500', color: '#FFF200' },
+  daysLabelDisabled: { color: '#8899B0' },
 
   switchColumn: {
     paddingHorizontal: 14,
@@ -550,9 +584,7 @@ const styles = StyleSheet.create({
   },
 
   emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 80,
   },
   emptyText: { fontSize: 16, color: '#A0AEC0', fontWeight: '600' },
   emptySubText: { fontSize: 13, color: '#CBD5E0', marginTop: 6 },
@@ -572,9 +604,7 @@ const styles = StyleSheet.create({
 
   // ── BOTTOM SHEET ──
   bottomSheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
   },
   bottomSheetContainer: {
     backgroundColor: '#ffffff',
@@ -585,211 +615,101 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   bottomSheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E2E8F0',
-    alignSelf: 'center',
-    marginBottom: 20,
+    width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0',
+    alignSelf: 'center', marginBottom: 20,
   },
-
-  bsInfoSimple: {
-    paddingHorizontal: 4,
-    paddingBottom: 20,
-  },
-  bsInfoTime: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: '#1F5CA9',
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  bsInfoNote: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#4A5568',
-  },
+  bsInfoSimple: { paddingHorizontal: 4, paddingBottom: 20, gap: 4 },
+  bsInfoTime: { fontSize: 40, fontWeight: '800', color: '#1F5CA9', letterSpacing: 1 },
+  bsInfoNote: { fontSize: 15, fontWeight: '500', color: '#4A5568' },
   bsInfoNotePlaceholder: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: '#A0AEC0',
-    fontStyle: 'italic',
+    fontSize: 15, fontWeight: '400', color: '#A0AEC0', fontStyle: 'italic',
   },
+  bsDaysLabel: { fontSize: 13, fontWeight: '500', color: '#1F5CA9' },
 
-  bottomSheetDivider: {
-    height: 1,
-    backgroundColor: '#F0F4F8',
-    marginBottom: 16,
-  },
+  bottomSheetDivider: { height: 1, backgroundColor: '#F0F4F8', marginBottom: 16 },
   bottomSheetDeleteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 13, borderRadius: 12, backgroundColor: '#F1F5F9', marginBottom: 8,
   },
-  bottomSheetDeleteText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#DC2626',
-  },
+  bottomSheetDeleteText: { fontSize: 14, fontWeight: '500', color: '#DC2626' },
   confirmDeleteSection: {
-    marginBottom: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    marginBottom: 8, paddingVertical: 14, paddingHorizontal: 14,
+    borderRadius: 14, backgroundColor: '#F8FAFC',
   },
-  confirmIconRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 4,
-  },
+  confirmIconRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   confirmIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17, backgroundColor: '#FEE2E2',
+    alignItems: 'center', justifyContent: 'center',
   },
-  confirmDeleteTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
+  confirmDeleteTitle: { fontSize: 14, fontWeight: '500', color: '#111827' },
   confirmDeleteSub: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 14,
-    paddingLeft: 44,
-    lineHeight: 18,
+    fontSize: 12, color: '#6B7280', marginBottom: 14, paddingLeft: 44, lineHeight: 18,
   },
-  confirmDeleteBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  confirmDeleteBtnRow: { flexDirection: 'row', gap: 8 },
   confirmCancelBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
+    flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#ffffff',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#E2E8F0', alignItems: 'center',
   },
-  confirmCancelBtnText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
+  confirmCancelBtnText: { fontSize: 13, fontWeight: '500', color: '#6B7280' },
   confirmDeleteBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: '#DC2626',
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
+    flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#DC2626',
+    alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
-  confirmDeleteBtnText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#ffffff',
-  },
+  confirmDeleteBtnText: { fontSize: 13, fontWeight: '500', color: '#ffffff' },
 
   // ── MODAL ──
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    width: '92%',
-    maxWidth: 380,
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF', borderRadius: 24, width: '92%', maxWidth: 380, overflow: 'hidden',
   },
   modalHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F8',
-    alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 18,
+    borderBottomWidth: 1, borderBottomColor: '#F0F4F8', alignItems: 'center',
   },
-  modalHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1F5CA9',
-    letterSpacing: 0.5,
-  },
+  modalHeaderTitle: { fontSize: 17, fontWeight: '700', color: '#1F5CA9', letterSpacing: 0.5 },
   modalFormContent: { padding: 20, paddingBottom: 10 },
   modalSection: { marginBottom: 16 },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 12,
-  },
+  modalLabel: { fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 12 },
   timePickerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    backgroundColor: '#F8FAFC', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 8,
+    borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12,
   },
   timePickerCol: { flex: 1, alignItems: 'center' },
-  timePickerLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
-    letterSpacing: 0.5,
-  },
-  timePickerBox: {
-    height: 150,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  timePickerLabel: { fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.5 },
+  timePickerBox: { height: 150, width: '100%', alignItems: 'center', justifyContent: 'center' },
   timePickerSeparator: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#1F5CA9',
-    marginTop: 14,
-    paddingHorizontal: 2,
+    fontSize: 22, fontWeight: '600', color: '#1F5CA9', marginTop: 14, paddingHorizontal: 2,
   },
   noteInput: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    backgroundColor: '#F8FAFC',
-    fontWeight: '500',
-    color: '#000000',
-    textAlignVertical: 'top',
-    minHeight: 80,
+    borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 11, backgroundColor: '#F8FAFC',
+    fontWeight: '500', color: '#000000', textAlignVertical: 'top', minHeight: 80,
   },
+
+  // Chọn ngày lặp lại
+  dayPickerRow: {
+    flexDirection: 'row', justifyContent: 'space-between', gap: 4,
+  },
+  dayBtn: {
+    flex: 1, paddingVertical: 9, borderRadius: 10,
+    backgroundColor: '#F0F4FA', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#E2E8F0',
+  },
+  dayBtnActive: {
+    backgroundColor: '#1F5CA9', borderColor: '#1F5CA9',
+  },
+  dayBtnText: { fontSize: 11, fontWeight: '700', color: '#7A8FAD' },
+  dayBtnTextActive: { color: '#FFF200' },
+  dayHint: {
+    fontSize: 12, color: '#7A8FAD', marginTop: 8, textAlign: 'center', fontStyle: 'italic',
+  },
+
   modalBottomActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-    paddingTop: 5,
-    backgroundColor: '#FFFFFF',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 24, paddingBottom: 20, paddingTop: 5, backgroundColor: '#FFFFFF',
   },
   modalBottomButton: { paddingVertical: 10, paddingHorizontal: 16 },
   modalBottomButtonTextCancel: { fontSize: 16, fontWeight: '700', color: '#000000' },
