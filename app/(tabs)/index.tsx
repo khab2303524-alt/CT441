@@ -251,7 +251,7 @@ export default function ScheduleScreen() {
           <Text style={styles.headerTitle}>Hẹn giờ</Text>
           <Text style={styles.headerSubtitle}>Chuông báo tiết học</Text>
         </View>
-        <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" />
+        {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
       </View>
 
       <ScrollView
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
   },
   noteText: { fontSize: 15, fontWeight: '600', color: '#ffffff', lineHeight: 21 },
   notePlaceholder: {
-    fontSize: 14, color: 'rgba(255,255,255,0.55)', fontWeight: '400',
+    fontSize: 14, color: '#8BAACC', fontWeight: '400',
   },
   noteTextDisabled: { color: '#8899B0' },
   daysLabel: { fontSize: 12, fontWeight: '500', color: '#FFF200' },
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
 
   // ── BOTTOM SHEET ──
   bottomSheetOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
+    flex: 1, backgroundColor: '#00000073', justifyContent: 'flex-end',
   },
   bottomSheetContainer: {
     backgroundColor: '#ffffff',
@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   bsInfoTime: { fontSize: 40, fontWeight: '800', color: '#1F5CA9', letterSpacing: 1 },
   bsInfoNote: { fontSize: 15, fontWeight: '500', color: '#4A5568' },
   bsInfoNotePlaceholder: {
-    fontSize: 15, fontWeight: '400', color: '#A0AEC0'
+    fontSize: 15, fontWeight: '400', color: '#A0AEC0', fontStyle: 'italic',
   },
   bsDaysLabel: { fontSize: 13, fontWeight: '500', color: '#1F5CA9' },
 
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
 
   // ── MODAL ──
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center',
+    flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
     backgroundColor: '#FFFFFF', borderRadius: 24, width: '92%', maxWidth: 380, overflow: 'hidden',
