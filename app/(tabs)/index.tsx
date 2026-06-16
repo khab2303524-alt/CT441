@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
   },
   noteText: { fontSize: 15, fontWeight: '600', color: '#ffffff', lineHeight: 21 },
   notePlaceholder: {
-    fontSize: 14, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', fontWeight: '400',
+    fontSize: 14, color: 'rgba(255,255,255,0.55)', fontWeight: '400',
   },
   noteTextDisabled: { color: '#8899B0' },
   daysLabel: { fontSize: 12, fontWeight: '500', color: '#FFF200' },
@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   bsInfoTime: { fontSize: 40, fontWeight: '800', color: '#1F5CA9', letterSpacing: 1 },
   bsInfoNote: { fontSize: 15, fontWeight: '500', color: '#4A5568' },
   bsInfoNotePlaceholder: {
-    fontSize: 15, fontWeight: '400', color: '#A0AEC0', fontStyle: 'italic',
+    fontSize: 15, fontWeight: '400', color: '#A0AEC0'
   },
   bsDaysLabel: { fontSize: 13, fontWeight: '500', color: '#1F5CA9' },
 
@@ -691,11 +691,11 @@ const styles = StyleSheet.create({
 
   // Chọn ngày lặp lại
   dayPickerRow: {
-    flexDirection: 'row', justifyContent: 'space-between', gap: 4,
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
   dayBtn: {
-    flex: 1, paddingVertical: 9, borderRadius: 10,
-    backgroundColor: '#F0F4FA', alignItems: 'center',
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#F0F4FA', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#E2E8F0',
   },
   dayBtnActive: {
