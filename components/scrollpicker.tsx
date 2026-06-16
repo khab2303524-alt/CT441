@@ -10,6 +10,7 @@ interface ScrollPickerProps {
   onValueChange: (value: any) => void;
   itemHeight?: number;
   visibleItems?: number;
+  pickerWidth?: number;
 }
 
 const REPEATS = 21;
@@ -21,6 +22,7 @@ export default function ScrollPicker({
   onValueChange,
   itemHeight = 50,
   visibleItems = 3,
+  pickerWidth = 75,
 }: ScrollPickerProps) {
   const optLen = options.length;
 
@@ -31,7 +33,9 @@ export default function ScrollPicker({
           value: block * optLen + origIdx,
           label:
             typeof opt === 'number'
-              ? String(opt).padStart(2, '0')
+              ? opt > 999
+                ? String(opt)
+                : String(opt).padStart(2, '0')
               : String(opt),
         }))
       ).flat(),
@@ -42,46 +46,72 @@ export default function ScrollPicker({
   const initialPickerValue = CENTER * optLen + (origIdx === -1 ? 0 : origIdx);
   const [pickerValue, setPickerValue] = useState(initialPickerValue);
 
-  const isUserChange = useRef(false);
+  // ── FIX 1: Dùng ref lưu giá trị thực đang chọn để renderItem không cần
+  //           phụ thuộc vào state (tránh re-render toàn list khi cuộn)
+  const pickerValueRef = useRef(initialPickerValue);
+
+  // ── FIX 2: Thay thế isUserChange bằng isScrolling — khóa hoàn toàn
+  //           useEffect trong khi người dùng đang/vừa tương tác.
+  //           Dùng timeout để giữ khóa thêm 300ms sau lần cuộn cuối,
+  //           tránh race condition khi cha setState chậm hơn animation.
+  const isScrolling = useRef(false);
+  const scrollLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const lockScroll = useCallback(() => {
+    isScrolling.current = true;
+    if (scrollLockTimer.current) clearTimeout(scrollLockTimer.current);
+    scrollLockTimer.current = setTimeout(() => {
+      isScrolling.current = false;
+    }, 300);
+  }, []);
+
+  // ── FIX 3: useEffect chỉ sync từ prop khi KHÔNG đang cuộn.
+  //           Dùng ref để so sánh tránh chạy thừa khi value không đổi thực sự.
+  const lastSyncedValue = useRef(selectedValue);
 
   useEffect(() => {
-    if (isUserChange.current) {
-      isUserChange.current = false;
-      return;
-    }
+    // Bỏ qua nếu đang cuộn hoặc prop không thực sự thay đổi
+    if (isScrolling.current) return;
+    if (selectedValue === lastSyncedValue.current) return;
+
     const idx = options.indexOf(selectedValue);
     if (idx !== -1) {
-      setPickerValue(CENTER * optLen + idx);
+      lastSyncedValue.current = selectedValue;
+      const newVal = CENTER * optLen + idx;
+      pickerValueRef.current = newVal;
+      setPickerValue(newVal);
     }
-  }, [selectedValue]);
+  }, [selectedValue, options, optLen]);
 
   const handleValueChanged = useCallback(
     ({ item }: { item: { value: number; label: string } }) => {
-      isUserChange.current = true;
+      // Giữ khóa mỗi khi có sự kiện change (kể cả đang giữa animation)
+      lockScroll();
+
+      pickerValueRef.current = item.value;
       setPickerValue(item.value);
+
       const realIdx = item.value % optLen;
+      lastSyncedValue.current = options[realIdx]; // cập nhật để useEffect không override
       onValueChange(options[realIdx]);
     },
-    [options, optLen, onValueChange]
+    [options, optLen, onValueChange, lockScroll]
   );
 
-  // TỰ TÍNH TRẠNG THÁI ACTIVE: So sánh item.value với pickerValue hiện tại của bánh xe
+  // ── FIX 4: renderItem KHÔNG phụ thuộc pickerValue state.
+  //           Đọc từ ref thay vào — không trigger re-render list khi cuộn.
+  //           VirtualizedWheelPicker tự quản lý highlight item active nên
+  //           thực tế không cần highlight manual; bỏ logic active/inactive
+  //           để tránh re-render không cần thiết.
   const renderItem = useCallback(({ item }: { item: any }) => {
-    const isCurrentActive = item.value === pickerValue;
-
     return (
       <View style={[styles.itemContainer, { height: itemHeight }]}>
-        <Text
-          style={[
-            styles.itemText,
-            isCurrentActive ? styles.activeText : styles.inactiveText
-          ]}
-        >
+        <Text style={styles.itemText}>
           {item.label}
         </Text>
       </View>
     );
-  }, [itemHeight, pickerValue]); // Cần theo dõi pickerValue ở đây để render lại khi cuộn
+  }, [itemHeight]); // Không còn phụ thuộc pickerValue → list không re-render khi cuộn
 
   return (
     <VirtualizedWheelPicker
@@ -90,11 +120,11 @@ export default function ScrollPicker({
       onValueChanged={handleValueChanged}
       itemHeight={itemHeight}
       visibleItemCount={visibleItems}
-      width={75}
+      width={pickerWidth}
       style={{ height: itemHeight * visibleItems }}
       enableScrollByTapOnItem
       renderItem={renderItem as any}
-    /> as any
+    />
   );
 }
 
@@ -105,26 +135,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   itemText: {
-    fontFamily: 'System',
-    fontVariant: ['tabular-nums'],
-  },
-  // BÂY GIỜ BẠN CÓ THỂ CHỈNH THOẢI MÁI THEO Ý MUỐN:
-
-  // 1. Số được chọn ở chính giữa
-  activeText: {
-    fontSize: 24,          // Cỡ chữ số giữa to nổi bật
-    fontWeight: '900',     // Chữ đậm nét
+    fontSize: 24,
+    fontWeight: '900',
     color: '#1F5CA9',
     letterSpacing: -1,
     fontVariant: ['tabular-nums'],
   },
-
-  // 2. Các số mờ xung quanh khi chưa được chọn
-  inactiveText: {
-    fontSize: 24,          // Cỡ chữ nhỏ hơn số giữa
-    fontWeight: '900',     // Chữ mảnh hơn
-    color: '#1F5CA9',
-    letterSpacing: -1,
-    fontVariant: ['tabular-nums'],
-  }
 });

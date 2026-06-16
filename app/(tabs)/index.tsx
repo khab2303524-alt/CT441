@@ -1,7 +1,7 @@
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onValue, ref, set } from 'firebase/database';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -30,6 +30,24 @@ interface ScheduleItem {
   enabled: boolean;
   days: number[];   // mảng rỗng [] = chỉ 1 lần, có phần tử = lặp lại các thứ đó
 }
+
+// ── Component nút ngày được memo hóa để tránh re-render khi state cha thay đổi ──
+const DayButton = React.memo(({ label, active, onPress }: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    style={[styles.dayBtn, active && styles.dayBtnActive]}
+    onPress={onPress}
+    activeOpacity={0.75}
+    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+  >
+    <Text style={[styles.dayBtnText, active && styles.dayBtnTextActive]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+));
 
 export default function ScheduleScreen() {
   const [showModal, setShowModal] = useState(false);
@@ -122,11 +140,11 @@ export default function ScheduleScreen() {
       .catch((error) => showError('Lỗi Firebase', error.message));
   };
 
-  const toggleDay = (day: number) => {
+  const toggleDay = useCallback((day: number) => {
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     );
-  };
+  }, []);
 
   const openBottomSheet = (id: number) => {
     setBottomSheetTargetId(id);
@@ -399,8 +417,12 @@ export default function ScheduleScreen() {
 
       {/* MODAL THÊM / CHỈNH SỬA */}
       <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowModal(false)}>
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          {/* Overlay bắt sự kiện đóng modal */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowModal(false)} />
+
+          {/* Nội dung modal - không bị ảnh hưởng bởi Pressable overlay */}
+          <View style={styles.modalContent}>
 
             <View style={styles.modalHeader}>
               <Text style={styles.modalHeaderTitle}>
@@ -453,21 +475,14 @@ export default function ScheduleScreen() {
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Lặp lại</Text>
                 <View style={styles.dayPickerRow}>
-                  {DAYS_LABEL.map((label, index) => {
-                    const active = selectedDays.includes(index);
-                    return (
-                      <TouchableOpacity
-                        key={index}
-                        style={[styles.dayBtn, active && styles.dayBtnActive]}
-                        onPress={() => toggleDay(index)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={[styles.dayBtnText, active && styles.dayBtnTextActive]}>
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  {DAYS_LABEL.map((label, index) => (
+                    <DayButton
+                      key={index}
+                      label={label}
+                      active={selectedDays.includes(index)}
+                      onPress={() => toggleDay(index)}
+                    />
+                  ))}
                 </View>
               </View>
             </View>
@@ -489,16 +504,16 @@ export default function ScheduleScreen() {
               </TouchableOpacity>
             </View>
 
-          </Pressable>
+            <FeedbackModal
+              visible={feedbackModal.visible}
+              type={feedbackModal.type}
+              title={feedbackModal.title}
+              message={feedbackModal.message}
+              onDismiss={hideFeedback}
+            />
+          </View>
 
-          <FeedbackModal
-            visible={feedbackModal.visible}
-            type={feedbackModal.type}
-            title={feedbackModal.title}
-            message={feedbackModal.message}
-            onDismiss={hideFeedback}
-          />
-        </Pressable>
+        </View>
       </Modal>
 
       {!showModal && (

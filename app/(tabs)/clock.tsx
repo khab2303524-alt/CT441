@@ -2,7 +2,6 @@ import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -24,9 +23,13 @@ export default function ClockScreen() {
   const [temperature, setTemperature] = useState('--°C');
   const [humidity, setHumidity] = useState('--%');
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<'gio' | 'ngay'>('gio');
   const [editHours, setEditHours] = useState(0);
   const [editMinutes, setEditMinutes] = useState(0);
   const [editSeconds, setEditSeconds] = useState(0);
+  const [editNgay, setEditNgay] = useState(1);
+  const [editThang, setEditThang] = useState(1);
+  const [editNam, setEditNam] = useState(2024);
   const isESPConnected = useESPConnection();
   const timeData = useESPTime();
   const { showSuccess, showError } = useCustomAlert();
@@ -43,6 +46,10 @@ export default function ClockScreen() {
         setEditHours(Gio);
         setEditMinutes(Phut);
         setEditSeconds(Giay);
+
+        setEditNgay(Ngay);
+        setEditThang(Thang);
+        setEditNam(Nam);
       }
 
       const dd = String(Ngay).padStart(2, '0');
@@ -72,7 +79,11 @@ export default function ClockScreen() {
       setEditHours(timeData.Gio);
       setEditMinutes(timeData.Phut);
       setEditSeconds(timeData.Giay);
+      setEditNgay(timeData.Ngay);
+      setEditThang(timeData.Thang);
+      setEditNam(timeData.Nam);
     }
+    setActiveTab('gio');
     setEditModalVisible(true);
   };
 
@@ -90,6 +101,35 @@ export default function ClockScreen() {
     } catch (error) {
       showError('Lỗi', 'Không thể cập nhật giờ');
       console.error('Error updating time:', error);
+    }
+  };
+
+  // Tính số ngày max trong tháng (xử lý năm nhuận)
+  const daysInMonth = (month: number, year: number) => new Date(year, month, 0).getDate();
+
+  // Tính thứ từ ngày/tháng/năm (0=CN, 1=T2 ... 6=T7)
+  const calcThu = (day: number, month: number, year: number) =>
+    new Date(year, month - 1, day).getDay();
+
+  const saveDate = async () => {
+    // Clamp ngày nếu vượt quá số ngày trong tháng
+    const maxDay = daysInMonth(editThang, editNam);
+    const safeNgay = Math.min(editNgay, maxDay);
+    const thu = calcThu(safeNgay, editThang, editNam);
+    try {
+      const datNgayRef = ref(db, 'DongHo/DatNgay');
+      await update(datNgayRef, {
+        Ngay: safeNgay,
+        Thang: editThang,
+        Nam: editNam,
+        Thu: thu,
+        capNhat: true,
+      });
+      showSuccess('Thành công', 'Đã gửi lệnh chỉnh ngày đến thiết bị');
+      setEditModalVisible(false);
+    } catch (error) {
+      showError('Lỗi', 'Không thể cập nhật ngày');
+      console.error('Error updating date:', error);
     }
   };
 
@@ -165,70 +205,170 @@ export default function ClockScreen() {
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
 
             <View style={styles.modalHeader}>
-              <Text style={styles.modalHeaderTitle}>CHỈNH GIỜ</Text>
+              <Text style={styles.modalHeaderTitle}>CHỈNH THỜI GIAN</Text>
+            </View>
+
+            {/* TAB SWITCHER */}
+            <View style={styles.tabRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.tabBtn, activeTab === 'gio' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('gio')}
+              >
+                <FontAwesome6 name="clock" size={13} color={activeTab === 'gio' ? '#ffffff' : '#1F5CA9'} style={{ marginRight: 6 }} />
+                <Text style={[styles.tabBtnText, activeTab === 'gio' && styles.tabBtnTextActive]}>Chỉnh giờ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.tabBtn, activeTab === 'ngay' && styles.tabBtnActive]}
+                onPress={() => setActiveTab('ngay')}
+              >
+                <FontAwesome6 name="calendar-days" size={13} color={activeTab === 'ngay' ? '#ffffff' : '#1F5CA9'} style={{ marginRight: 6 }} />
+                <Text style={[styles.tabBtnText, activeTab === 'ngay' && styles.tabBtnTextActive]}>Chỉnh ngày</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.modalFormContent}>
-              <View style={styles.modalSection}>
-                <Text style={styles.modalLabel}>Chọn thời gian</Text>
-                
-                {/* ĐỒNG BỘ PICKER CONTAINER */}
-                <View style={styles.timePickerContainer}>
-                  <View style={styles.timePickerCol}>
-                    <Text style={styles.timePickerLabel}>GIỜ</Text>
-                    <View style={styles.timePickerBox}>
-                      <ScrollPicker
-                        options={Array.from({ length: 24 }, (_, i) => i)}
-                        selectedValue={editHours}
-                        onValueChange={setEditHours}
-                      />
+
+              {/* ── TAB GIỜ ── */}
+              {activeTab === 'gio' && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalLabel}>Chọn thời gian</Text>
+
+                  <View style={styles.timePickerContainer}>
+                    <View style={styles.timePickerCol}>
+                      <Text style={styles.timePickerLabel}>GIỜ</Text>
+                      <View style={styles.timePickerBox}>
+                        <ScrollPicker
+                          options={Array.from({ length: 24 }, (_, i) => i)}
+                          selectedValue={editHours}
+                          onValueChange={setEditHours}
+                        />
+                      </View>
+                    </View>
+
+                    <Text style={styles.timePickerSeparator}>:</Text>
+
+                    <View style={styles.timePickerCol}>
+                      <Text style={styles.timePickerLabel}>PHÚT</Text>
+                      <View style={styles.timePickerBox}>
+                        <ScrollPicker
+                          options={Array.from({ length: 60 }, (_, i) => i)}
+                          selectedValue={editMinutes}
+                          onValueChange={setEditMinutes}
+                        />
+                      </View>
+                    </View>
+
+                    <Text style={styles.timePickerSeparator}>:</Text>
+
+                    <View style={styles.timePickerCol}>
+                      <Text style={styles.timePickerLabel}>GIÂY</Text>
+                      <View style={styles.timePickerBox}>
+                        <ScrollPicker
+                          options={Array.from({ length: 60 }, (_, i) => i)}
+                          selectedValue={editSeconds}
+                          onValueChange={setEditSeconds}
+                        />
+                      </View>
                     </View>
                   </View>
 
-                  <Text style={styles.timePickerSeparator}>:</Text>
-
-                  <View style={styles.timePickerCol}>
-                    <Text style={styles.timePickerLabel}>PHÚT</Text>
-                    <View style={styles.timePickerBox}>
-                      <ScrollPicker
-                        options={Array.from({ length: 60 }, (_, i) => i)}
-                        selectedValue={editMinutes}
-                        onValueChange={setEditMinutes}
-                      />
-                    </View>
-                  </View>
-
-                  <Text style={styles.timePickerSeparator}>:</Text>
-
-                  <View style={styles.timePickerCol}>
-                    <Text style={styles.timePickerLabel}>GIÂY</Text>
-                    <View style={styles.timePickerBox}>
-                      <ScrollPicker
-                        options={Array.from({ length: 60 }, (_, i) => i)}
-                        selectedValue={editSeconds}
-                        onValueChange={setEditSeconds}
-                      />
+                  <View style={styles.timeDisplayContainer}>
+                    <View style={styles.timeDisplayBox}>
+                      <Text style={styles.timeDisplayBoxLabel}>Thời gian mới</Text>
+                      <Text style={styles.timeDisplayBoxValue}>
+                        {String(editHours).padStart(2, '0')}:{String(editMinutes).padStart(2, '0')}:{String(editSeconds).padStart(2, '0')}
+                      </Text>
                     </View>
                   </View>
                 </View>
+              )}
 
-                {/* ĐỒNG BỘ BOX XEM TRƯỚC */}
-                <View style={styles.timeDisplayContainer}>
-                  <View style={styles.timeDisplayBox}>
-                    <Text style={styles.timeDisplayBoxLabel}>Thời gian mới</Text>
-                    <Text style={styles.timeDisplayBoxValue}>
-                      {String(editHours).padStart(2, '0')}:{String(editMinutes).padStart(2, '0')}:{String(editSeconds).padStart(2, '0')}
-                    </Text>
+              {/* ── TAB NGÀY ── */}
+              {activeTab === 'ngay' && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalLabel}>Chọn ngày</Text>
+
+                  <View style={styles.datePickerContainer}>
+                    {/* Cột NGÀY */}
+                    <View style={styles.datePickerCol}>
+                      <Text style={styles.timePickerLabel}>NGÀY</Text>
+                      <View style={styles.timePickerBox}>
+                        <ScrollPicker
+                          options={Array.from({ length: daysInMonth(editThang, editNam) }, (_, i) => i + 1)}
+                          selectedValue={editNgay}
+                          onValueChange={setEditNgay}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Dấu / căn giữa theo picker */}
+                    <View style={styles.datePickerSepWrap}>
+                      <Text style={styles.datePickerSep}>/</Text>
+                    </View>
+
+                    {/* Cột THÁNG */}
+                    <View style={styles.datePickerCol}>
+                      <Text style={styles.timePickerLabel}>THÁNG</Text>
+                      <View style={styles.timePickerBox}>
+                        <ScrollPicker
+                          options={Array.from({ length: 12 }, (_, i) => i + 1)}
+                          selectedValue={editThang}
+                          onValueChange={(val) => {
+                            setEditThang(val);
+                            const max = daysInMonth(val, editNam);
+                            if (editNgay > max) setEditNgay(max);
+                          }}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Dấu / căn giữa theo picker */}
+                    <View style={styles.datePickerSepWrap}>
+                      <Text style={styles.datePickerSep}>/</Text>
+                    </View>
+
+                    {/* Cột NĂM - rộng hơn vì 4 chữ số */}
+                    <View style={styles.datePickerColYear}>
+                      <Text style={styles.timePickerLabel}>NĂM</Text>
+                      <View style={[styles.timePickerBox, { width: '100%' }]}>
+                        <ScrollPicker
+                          options={Array.from({ length: 100 }, (_, i) => 2000 + i)}
+                          selectedValue={editNam}
+                          pickerWidth={95}
+                          onValueChange={(val) => {
+                            setEditNam(val);
+                            const max = daysInMonth(editThang, val);
+                            if (editNgay > max) setEditNgay(max);
+                          }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.timeDisplayContainer}>
+                    <View style={styles.timeDisplayBox}>
+                      <Text style={styles.timeDisplayBoxLabel}>Ngày mới</Text>
+                      <Text style={styles.timeDisplayBoxValue}>
+                        {String(editNgay).padStart(2, '0')}/{String(editThang).padStart(2, '0')}/{editNam}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
+              )}
+
             </View>
 
             <View style={styles.modalBottomActions}>
               <TouchableOpacity activeOpacity={0.7} style={styles.modalBottomButton} onPress={() => setEditModalVisible(false)}>
                 <Text style={styles.modalBottomButtonTextCancel}>Hủy</Text>
               </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.7} style={styles.modalBottomButton} onPress={saveTime}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.modalBottomButton}
+                onPress={activeTab === 'gio' ? saveTime : saveDate}
+              >
                 <Text style={styles.modalBottomButtonTextSubmit}>Xong</Text>
               </TouchableOpacity>
             </View>
@@ -314,15 +454,15 @@ const styles = StyleSheet.create({
   sensorLabelText: { fontSize: 12, color: '#64748B', fontWeight: '600', marginBottom: 4 },
   sensorValue: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
 
-  editFab: { 
-    position: 'absolute', 
-    bottom: 30, 
-    right: 24, 
-    width: 55, 
-    height: 55, 
-    borderRadius: 27.5, 
-    backgroundColor: '#1F5CA9', 
-    alignItems: 'center', 
+  editFab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 24,
+    width: 55,
+    height: 55,
+    borderRadius: 27.5,
+    backgroundColor: '#1F5CA9',
+    alignItems: 'center',
     justifyContent: 'center',
   },
 
@@ -378,5 +518,73 @@ const styles = StyleSheet.create({
   modalBottomActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 20, paddingTop: 5, backgroundColor: '#FFFFFF' },
   modalBottomButton: { paddingVertical: 10, paddingHorizontal: 16 },
   modalBottomButtonTextCancel: { fontSize: 16, fontWeight: '700', color: '#000000' },
-  modalBottomButtonTextSubmit: { fontSize: 16, fontWeight: '700', color: '#1F5CA9' }
+  modalBottomButtonTextSubmit: { fontSize: 16, fontWeight: '700', color: '#1F5CA9' },
+
+  // ── TAB SWITCHER ──────────────────────────────────────────────────────────
+  tabRow: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    backgroundColor: '#EFF4FB',
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  tabBtnActive: {
+    backgroundColor: '#1F5CA9',
+    shadowColor: '#1F5CA9',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F5CA9',
+  },
+  tabBtnTextActive: {
+    color: '#ffffff',
+  },
+
+  // ── DATE PICKER (layout riêng, tránh lệch dấu /) ─────────────────────────
+  datePickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',           // căn dọc toàn bộ theo trục giữa
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  datePickerCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  datePickerColYear: {
+    flex: 1.35,                     // cột năm rộng hơn vừa đủ 4 chữ số
+    alignItems: 'center',
+  },
+  datePickerSepWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 20,                 // đẩy xuống qua phần label để căn giữa vùng picker
+    paddingHorizontal: 2,
+  },
+  datePickerSep: {
+    fontSize: 22,
+    fontWeight: '400',
+    color: '#1F5CA9',
+  },
 });
