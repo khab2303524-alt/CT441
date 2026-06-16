@@ -579,12 +579,12 @@ const styles = StyleSheet.create({
   datePickerSepWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 20,                 // đẩy xuống qua phần label để căn giữa vùng picker
+    paddingTop: 20,
     paddingHorizontal: 2,
   },
   datePickerSep: {
     fontSize: 22,
-    fontWeight: '400',
+    fontWeight: '600',
     color: '#1F5CA9',
   },
 });

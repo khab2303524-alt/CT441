@@ -122,6 +122,7 @@ export default function ScrollPicker({
       visibleItemCount={visibleItems}
       width={pickerWidth}
       style={{ height: itemHeight * visibleItems }}
+      overlayItemStyle={{ marginHorizontal: 5}}
       enableScrollByTapOnItem
       renderItem={renderItem as any}
     />
