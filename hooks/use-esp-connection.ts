@@ -30,6 +30,14 @@ let firebaseListenerActive = false;
 let connectionStateListeners: Set<(status: boolean) => void> = new Set();
 let timeDataListeners: Set<(data: TimeData) => void> = new Set();
 
+// Cửa sổ "bỏ qua chống-nhảy-lùi" sau khi người dùng vừa gửi lệnh chỉnh giờ/ngày
+// -> trong khoảng thời gian này, dữ liệu Firebase luôn được tin tưởng tuyệt đối,
+// dù nó "nhỏ hơn" giờ đang hiển thị (vì đây là chỉnh giờ chủ động, không phải trễ mạng)
+let manualOverrideUntil = 0;
+export const notifyManualTimeChange = () => {
+  manualOverrideUntil = Date.now() + 8000;
+};
+
 // Chỉ dùng để hiển thị trạng thái "Đã kết nối / Mất kết nối", KHÔNG ảnh hưởng đến việc đồng hồ chạy
 const DISCONNECT_THRESHOLD = 2500;
 
@@ -114,9 +122,15 @@ const setupFirebaseListener = () => {
     };
 
     // Tránh hiển thị NHẢY LÙI giây: nếu dữ liệu mới (do trễ mạng) nhỏ hơn giờ đang hiển thị,
-    // giữ nguyên giờ đang hiển thị làm mốc mới, chỉ "reset" lại đồng hồ đếm thực về thời điểm này
+    // giữ nguyên giờ đang hiển thị làm mốc mới, chỉ "reset" lại đồng hồ đếm thực về thời điểm này.
+    // NGOẠI TRỪ: nếu đang trong cửa sổ vừa chỉnh giờ/ngày thủ công -> luôn tin dữ liệu mới.
+    // Lưu ý: KHÔNG tắt cửa sổ này ngay khi nhận gói đầu tiên, vì trong lúc ESP32 chưa kịp xử lý
+    // lệnh DatGio/DatNgay, nó vẫn đẩy giờ CŨ lên Firebase mỗi giây như bình thường -> nếu tắt sớm,
+    // tới khi giờ ĐÃ CHỈNH thực sự được đẩy lên thì cửa sổ đã hết, lại bị chặn như cũ.
+    // Để cửa sổ tự hết hạn theo thời gian, đảm bảo bắt được đúng gói đã chỉnh dù nó đến sau vài giây.
     const dangHienThi = tinhGioHienTai();
-    if (dangHienThi && toMillis(moiNhan) < toMillis(dangHienThi)) {
+    const dangTrongCuaSoChinhTay = Date.now() < manualOverrideUntil;
+    if (!dangTrongCuaSoChinhTay && dangHienThi && toMillis(moiNhan) < toMillis(dangHienThi)) {
       globalAnchorData = dangHienThi;
     } else {
       globalAnchorData = moiNhan;

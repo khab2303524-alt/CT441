@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
-import { useCustomAlert, useESPConnection, useESPTime } from '../../hooks';
+import { useCustomAlert, useESPConnection, useESPTime, notifyManualTimeChange } from '../../hooks';
 
 const DAY_NAMES = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
@@ -96,6 +96,7 @@ export default function ClockScreen() {
         Giay: editSeconds,
         capNhat: true,
       });
+      notifyManualTimeChange();
       showSuccess('Thành công', 'Đã gửi lệnh chỉnh giờ đến thiết bị');
       setEditModalVisible(false);
     } catch (error) {
@@ -125,6 +126,7 @@ export default function ClockScreen() {
         Thu: thu,
         capNhat: true,
       });
+      notifyManualTimeChange();
       showSuccess('Thành công', 'Đã gửi lệnh chỉnh ngày đến thiết bị');
       setEditModalVisible(false);
     } catch (error) {
