@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
-import { useCustomAlert, useESPConnection, useESPTime, notifyManualTimeChange } from '../../hooks';
+import { notifyManualTimeChange, useCustomAlert, useESPConnection, useESPTime } from '../../hooks';
 
 const DAY_NAMES = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
@@ -105,15 +105,12 @@ export default function ClockScreen() {
     }
   };
 
-  // Tính số ngày max trong tháng (xử lý năm nhuận)
   const daysInMonth = (month: number, year: number) => new Date(year, month, 0).getDate();
 
-  // Tính thứ từ ngày/tháng/năm (0=CN, 1=T2 ... 6=T7)
   const calcThu = (day: number, month: number, year: number) =>
     new Date(year, month - 1, day).getDay();
 
   const saveDate = async () => {
-    // Clamp ngày nếu vượt quá số ngày trong tháng
     const maxDay = daysInMonth(editThang, editNam);
     const safeNgay = Math.min(editNgay, maxDay);
     const thu = calcThu(safeNgay, editThang, editNam);
@@ -137,7 +134,6 @@ export default function ClockScreen() {
 
   return (
     <View style={styles.mainContainer}>
-      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Đồng hồ</Text>
@@ -149,7 +145,6 @@ export default function ClockScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.contentWrapper}>
 
-          {/* THẺ ĐỒNG HỒ CAO CẤP */}
           <View style={styles.clockCard}>
             <View style={styles.timeWrapper}>
               <Text style={styles.timeDisplay}>{time}</Text>
@@ -164,7 +159,6 @@ export default function ClockScreen() {
             </View>
           </View>
 
-          {/* TIÊU ĐỀ MÔI TRƯỜNG PHÒNG HỌC */}
           <View style={styles.sectionLabelContainer}>
             <Text style={styles.sectionLabel}>MÔI TRƯỜNG</Text>
             <View style={styles.sectionLine} />
@@ -196,12 +190,10 @@ export default function ClockScreen() {
         </View>
       </ScrollView>
 
-      {/* NÚT FAB CHỈNH SỬA */}
       <TouchableOpacity style={styles.editFab} onPress={openEditModal} activeOpacity={0.85}>
         <FontAwesome6 name="pen-to-square" size={20} color="#ffffff" />
       </TouchableOpacity>
 
-      {/* MODAL CHỈNH SỬA THỜI GIAN */}
       <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setEditModalVisible(false)}>
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
@@ -287,7 +279,6 @@ export default function ClockScreen() {
                 </View>
               )}
 
-              {/* ── TAB NGÀY ── */}
               {activeTab === 'ngay' && (
                 <View style={styles.modalSection}>
                   <Text style={styles.modalLabel}>Chọn ngày</Text>
@@ -305,12 +296,10 @@ export default function ClockScreen() {
                       </View>
                     </View>
 
-                    {/* Dấu / căn giữa theo picker */}
                     <View style={styles.datePickerSepWrap}>
                       <Text style={styles.datePickerSep}>/</Text>
                     </View>
 
-                    {/* Cột THÁNG */}
                     <View style={styles.datePickerCol}>
                       <Text style={styles.timePickerLabel}>THÁNG</Text>
                       <View style={styles.timePickerBox}>
@@ -326,7 +315,6 @@ export default function ClockScreen() {
                       </View>
                     </View>
 
-                    {/* Dấu / căn giữa theo picker */}
                     <View style={styles.datePickerSepWrap}>
                       <Text style={styles.datePickerSep}>/</Text>
                     </View>
@@ -476,7 +464,6 @@ const styles = StyleSheet.create({
   modalSection: { marginBottom: 8 },
   modalLabel: { fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 12 },
 
-  // --- STYLE TIME PICKER ĐÃ ĐỒNG BỘ ---
   timePickerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -522,7 +509,6 @@ const styles = StyleSheet.create({
   modalBottomButtonTextCancel: { fontSize: 16, fontWeight: '700', color: '#000000' },
   modalBottomButtonTextSubmit: { fontSize: 16, fontWeight: '700', color: '#1F5CA9' },
 
-  // ── TAB SWITCHER ──────────────────────────────────────────────────────────
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: 20,
@@ -558,10 +544,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  // ── DATE PICKER (layout riêng, tránh lệch dấu /) ─────────────────────────
   datePickerContainer: {
     flexDirection: 'row',
-    alignItems: 'center',           // căn dọc toàn bộ theo trục giữa
+    alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
     paddingVertical: 12,
@@ -575,7 +560,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   datePickerColYear: {
-    flex: 1.35,                     // cột năm rộng hơn vừa đủ 4 chữ số
+    flex: 1.35,
     alignItems: 'center',
   },
   datePickerSepWrap: {

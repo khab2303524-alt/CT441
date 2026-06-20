@@ -45,15 +45,7 @@ export default function ScrollPicker({
   const origIdx = options.indexOf(selectedValue);
   const initialPickerValue = CENTER * optLen + (origIdx === -1 ? 0 : origIdx);
   const [pickerValue, setPickerValue] = useState(initialPickerValue);
-
-  // ── FIX 1: Dùng ref lưu giá trị thực đang chọn để renderItem không cần
-  //           phụ thuộc vào state (tránh re-render toàn list khi cuộn)
   const pickerValueRef = useRef(initialPickerValue);
-
-  // ── FIX 2: Thay thế isUserChange bằng isScrolling — khóa hoàn toàn
-  //           useEffect trong khi người dùng đang/vừa tương tác.
-  //           Dùng timeout để giữ khóa thêm 300ms sau lần cuộn cuối,
-  //           tránh race condition khi cha setState chậm hơn animation.
   const isScrolling = useRef(false);
   const scrollLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,12 +57,9 @@ export default function ScrollPicker({
     }, 300);
   }, []);
 
-  // ── FIX 3: useEffect chỉ sync từ prop khi KHÔNG đang cuộn.
-  //           Dùng ref để so sánh tránh chạy thừa khi value không đổi thực sự.
   const lastSyncedValue = useRef(selectedValue);
 
   useEffect(() => {
-    // Bỏ qua nếu đang cuộn hoặc prop không thực sự thay đổi
     if (isScrolling.current) return;
     if (selectedValue === lastSyncedValue.current) return;
 
@@ -85,24 +74,18 @@ export default function ScrollPicker({
 
   const handleValueChanged = useCallback(
     ({ item }: { item: { value: number; label: string } }) => {
-      // Giữ khóa mỗi khi có sự kiện change (kể cả đang giữa animation)
       lockScroll();
 
       pickerValueRef.current = item.value;
       setPickerValue(item.value);
 
       const realIdx = item.value % optLen;
-      lastSyncedValue.current = options[realIdx]; // cập nhật để useEffect không override
+      lastSyncedValue.current = options[realIdx];
       onValueChange(options[realIdx]);
     },
     [options, optLen, onValueChange, lockScroll]
   );
 
-  // ── FIX 4: renderItem KHÔNG phụ thuộc pickerValue state.
-  //           Đọc từ ref thay vào — không trigger re-render list khi cuộn.
-  //           VirtualizedWheelPicker tự quản lý highlight item active nên
-  //           thực tế không cần highlight manual; bỏ logic active/inactive
-  //           để tránh re-render không cần thiết.
   const renderItem = useCallback(({ item }: { item: any }) => {
     return (
       <View style={[styles.itemContainer, { height: itemHeight }]}>
@@ -111,7 +94,7 @@ export default function ScrollPicker({
         </Text>
       </View>
     );
-  }, [itemHeight]); // Không còn phụ thuộc pickerValue → list không re-render khi cuộn
+  }, [itemHeight]);
 
   return (
     <VirtualizedWheelPicker
