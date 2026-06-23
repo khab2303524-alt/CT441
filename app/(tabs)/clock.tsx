@@ -172,7 +172,7 @@ export default function ClockScreen() {
               </View>
               <View style={styles.sensorInfo}>
                 <Text style={styles.sensorLabelText}>Nhiệt độ</Text>
-                <Text style={[styles.sensorValue, { color: '#1A202C' }]}>{temperature}</Text>
+                <Text style={[styles.sensorValue, { color: '#FF4D4F' }]}>{temperature}</Text>
               </View>
             </View>
 
@@ -182,7 +182,7 @@ export default function ClockScreen() {
               </View>
               <View style={styles.sensorInfo}>
                 <Text style={styles.sensorLabelText}>Độ ẩm</Text>
-                <Text style={[styles.sensorValue, { color: '#1A202C' }]}>{humidity}</Text>
+                <Text style={[styles.sensorValue, { color: '#00AFEF' }]}>{humidity}</Text>
               </View>
             </View>
           </View>
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   },
   iconCircle: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sensorInfo: { marginTop: 2 },
-  sensorLabelText: { fontSize: 12, color: '#64748B', fontWeight: '600', marginBottom: 4 },
+  sensorLabelText: { fontSize: 12, color: '#000000', fontWeight: '600', marginBottom: 4 },
   sensorValue: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
 
   editFab: {

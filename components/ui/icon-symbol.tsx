@@ -16,7 +16,7 @@ type IconSymbolName = keyof typeof MAPPING;
 const MAPPING = {
   'alarm.fill': 'alarm',
   'clock.fill': 'access-time',
-  'gearshape.fill': 'settings',
+  'slider.horizontal.3': 'tune',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
 } as IconMapping;
