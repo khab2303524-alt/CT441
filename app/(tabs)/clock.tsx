@@ -137,7 +137,7 @@ export default function ClockScreen() {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Đồng hồ</Text>
-          <Text style={styles.headerSubtitle}>Thời gian và môi trường</Text>
+          <Text style={styles.headerSubtitle}>Nhiệt độ và độ ẩm</Text>
         </View>
         {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
       </View>
@@ -160,16 +160,13 @@ export default function ClockScreen() {
           </View>
 
           <View style={styles.sectionLabelContainer}>
-            <Text style={styles.sectionLabel}>MÔI TRƯỜNG</Text>
+            <Text style={styles.sectionLabel}>NHIỆT ĐỘ VÀ ĐỘ ẨM</Text>
             <View style={styles.sectionLine} />
           </View>
 
           {/* LAYOUT 2 THẺ CẢM BIẾN MINI CARD */}
           <View style={styles.sensorRowContainer}>
             <View style={styles.sensorMiniCard}>
-              <View style={[styles.iconCircle, { backgroundColor: '#FFF5F5' }]}>
-                <FontAwesome6 name="temperature-three-quarters" size={20} color="#FF4D4F" />
-              </View>
               <View style={styles.sensorInfo}>
                 <Text style={styles.sensorLabelText}>Nhiệt độ</Text>
                 <Text style={[styles.sensorValue, { color: '#FF4D4F' }]}>{temperature}</Text>
@@ -177,9 +174,6 @@ export default function ClockScreen() {
             </View>
 
             <View style={styles.sensorMiniCard}>
-              <View style={[styles.iconCircle, { backgroundColor: '#E6F7FF' }]}>
-                <FontAwesome6 name="droplet" size={18} color="#00AFEF" />
-              </View>
               <View style={styles.sensorInfo}>
                 <Text style={styles.sensorLabelText}>Độ ẩm</Text>
                 <Text style={[styles.sensorValue, { color: '#00AFEF' }]}>{humidity}</Text>
@@ -415,10 +409,10 @@ const styles = StyleSheet.create({
   secondsDisplay: { fontSize: 24, fontWeight: '800', color: '#00AFEF', fontVariant: ['tabular-nums'] },
 
   dateContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 14, backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 100 },
-  dateDisplay: { fontSize: 13, color: '#475569', fontWeight: '700' },
+  dateDisplay: { fontSize: 13, color: '#000000', fontWeight: '600' },
 
   sectionLabelContainer: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, paddingHorizontal: 4 },
-  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#000000', letterSpacing: 1 },
+  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#000000', letterSpacing: 1 },
   sectionLine: { flex: 1, height: 1, backgroundColor: '#000000' },
 
   sensorRowContainer: { flexDirection: 'row', gap: 16, width: '100%' },
@@ -441,7 +435,7 @@ const styles = StyleSheet.create({
   },
   iconCircle: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sensorInfo: { marginTop: 2 },
-  sensorLabelText: { fontSize: 12, color: '#000000', fontWeight: '600', marginBottom: 4 },
+  sensorLabelText: { fontSize: 14, color: '#000000', fontWeight: '600', marginBottom: 4 },
   sensorValue: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
 
   editFab: {

@@ -1,7 +1,9 @@
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import { LinearGradient } from 'expo-linear-gradient';
 import { onValue, ref, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   Animated,
   Modal,
   Pressable,
@@ -17,8 +19,8 @@ import { FeedbackModal } from '../../components/feedbackmodal';
 import ScrollPicker from '../../components/scrollpicker';
 import { db } from '../../config/firebaseConfig';
 import { useESPConnection } from '../../hooks';
+import { useFocusEffect } from '@react-navigation/native';
 
-// 0 = Chủ Nhật, 1 = Thứ 2 ... 6 = Thứ 7  (khớp với now.dayOfTheWeek() của Arduino DS3231)
 const DAYS_LABEL = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
 interface ScheduleItem {
@@ -26,10 +28,9 @@ interface ScheduleItem {
   alarmTime: string;
   note: string;
   enabled: boolean;
-  days: number[];   // mảng rỗng [] = chỉ 1 lần, có phần tử = lặp lại các thứ đó
+  days: number[];
 }
 
-// ── Component nút ngày được memo hóa để tránh re-render khi state cha thay đổi ──
 const DayButton = React.memo(({ label, active, onPress }: {
   label: string;
   active: boolean;
@@ -63,6 +64,16 @@ export default function ScheduleScreen() {
     message: string;
   }>({ visible: false, type: 'success', title: '', message: '' });
 
+  // Tab: 'schedule' | 'manual'
+  const [activeTab, setActiveTab] = useState<'schedule' | 'manual'>('schedule');
+  const pausedAlarmIdsRef = useRef<number[]>([]);
+  const bellScaleAnim = useRef(new Animated.Value(1)).current;
+  const [bellRinging, setBellRinging] = useState(false);
+
+  // Ref luôn giữ schedule mới nhất để dùng trong AppState callback
+  const scheduleRef = useRef<ScheduleItem[]>([]);
+  const activeTabRef = useRef<'schedule' | 'manual'>('schedule');
+
   const showSuccess = (title: string, message: string) =>
     setFeedbackModal({ visible: true, type: 'success', title, message });
   const showError = (title: string, message: string) =>
@@ -75,6 +86,43 @@ export default function ScheduleScreen() {
   const bottomSheetAnim = useRef(new Animated.Value(300)).current;
 
   useESPConnection();
+
+  // Tự động khôi phục báo thức khi rời khỏi màn hình này (chuyển tab clock/settings)
+  // Chỉ khôi phục nếu đang ở tab "manual" và có báo thức đang bị tạm tắt
+  useFocusEffect(
+    useCallback(() => {
+      // Khi màn hình được focus lại: reset về tab hẹn giờ và restore alarm nếu đang ở thủ công
+      if (activeTabRef.current === 'manual') {
+        if (pausedAlarmIdsRef.current.length > 0) {
+          const idsToRestore = pausedAlarmIdsRef.current;
+          const restored = scheduleRef.current.map(s => ({
+            ...s,
+            enabled: idsToRestore.includes(s.id) ? true : s.enabled,
+          }));
+          saveScheduleToFirebase(restored);
+          set(ref(db, 'DongHo/ChuongThuCong'), false).catch(() => { });
+          pausedAlarmIdsRef.current = [];
+        }
+        activeTabRef.current = 'schedule';
+        setActiveTab('schedule');
+        setBellRinging(false);
+      }
+
+      return () => {
+        // Cleanup khi màn hình mất focus: restore alarm nếu vẫn còn ở thủ công
+        if (activeTabRef.current === 'manual' && pausedAlarmIdsRef.current.length > 0) {
+          const idsToRestore = pausedAlarmIdsRef.current;
+          const restored = scheduleRef.current.map(s => ({
+            ...s,
+            enabled: idsToRestore.includes(s.id) ? true : s.enabled,
+          }));
+          saveScheduleToFirebase(restored);
+          set(ref(db, 'DongHo/ChuongThuCong'), false).catch(() => { });
+          pausedAlarmIdsRef.current = [];
+        }
+      };
+    }, [])
+  );
 
   useEffect(() => {
     const alarmRef = ref(db, 'DongHo/dsBaoThuc');
@@ -97,12 +145,38 @@ export default function ScheduleScreen() {
             });
           }
         });
-        setSchedule(loadedSchedule.sort((a, b) => a.alarmTime.localeCompare(b.alarmTime)));
+        const sorted = loadedSchedule.sort((a, b) => a.alarmTime.localeCompare(b.alarmTime));
+        scheduleRef.current = sorted;
+        setSchedule(sorted);
       } else {
+        scheduleRef.current = [];
         setSchedule([]);
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  // Restore khi app về background/bị kill trong lúc đang ở tab thủ công
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (
+        (nextState === 'background' || nextState === 'inactive') &&
+        activeTabRef.current === 'manual' &&
+        pausedAlarmIdsRef.current.length > 0
+      ) {
+        const idsToRestore = pausedAlarmIdsRef.current;
+        const src = scheduleRef.current;
+        if (src.length === 0) return;
+        const restored = src.map(s => ({
+          ...s,
+          enabled: idsToRestore.includes(s.id) ? true : s.enabled,
+        }));
+        saveScheduleToFirebase(restored);
+        set(ref(db, 'DongHo/ChuongThuCong'), false).catch(() => {});
+        pausedAlarmIdsRef.current = [];
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   const saveScheduleToFirebase = (updatedList: ScheduleItem[]) => {
@@ -114,12 +188,69 @@ export default function ScheduleScreen() {
         active: item.enabled,
         gio: parseInt(hours, 10) || 0,
         phut: parseInt(minutes, 10) || 0,
-        thu: item.days,       // mảng [] hoặc [0,1,2...]
+        thu: item.days,
         note: item.note || '',
       };
     });
     set(ref(db, 'DongHo/dsBaoThuc'), alarmObjects)
       .catch((error) => showError('Lỗi Firebase', error.message));
+  };
+
+  const switchToManual = () => {
+    const enabledIds = schedule.filter(s => s.enabled).map(s => s.id);
+    pausedAlarmIdsRef.current = enabledIds;
+    if (enabledIds.length > 0) {
+      const updated = schedule.map(s => ({ ...s, enabled: false }));
+      saveScheduleToFirebase(updated);
+    }
+    set(ref(db, 'DongHo/ChuongThuCong'), false).catch(() => { });
+    activeTabRef.current = 'manual';
+    setActiveTab('manual');
+  };
+
+  const switchToSchedule = () => {
+    const idsToRestore = pausedAlarmIdsRef.current;
+    if (idsToRestore.length > 0) {
+      const restored = schedule.map(s => ({
+        ...s,
+        enabled: idsToRestore.includes(s.id) ? true : s.enabled,
+      }));
+      saveScheduleToFirebase(restored);
+    }
+    set(ref(db, 'DongHo/ChuongThuCong'), false).catch(() => { });
+    pausedAlarmIdsRef.current = [];
+    activeTabRef.current = 'schedule';
+    setActiveTab('schedule');
+    setBellRinging(false);
+  };
+
+  const handleTabPress = (tab: 'schedule' | 'manual') => {
+    if (tab === activeTab) return;
+    if (tab === 'manual') switchToManual();
+    else switchToSchedule();
+  };
+
+  const ringBellNow = () => {
+    if (bellRinging) return;
+    setBellRinging(true);
+    set(ref(db, 'DongHo/ChuongThuCong'), true)
+      .then(() => {
+        Animated.sequence([
+          Animated.timing(bellScaleAnim, { toValue: 1.12, duration: 100, useNativeDriver: true }),
+          Animated.timing(bellScaleAnim, { toValue: 0.94, duration: 80, useNativeDriver: true }),
+          Animated.timing(bellScaleAnim, { toValue: 1.08, duration: 80, useNativeDriver: true }),
+          Animated.timing(bellScaleAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
+        ]).start();
+        setTimeout(() => {
+          set(ref(db, 'DongHo/ChuongThuCong'), false)
+            .catch(() => { })
+            .finally(() => setBellRinging(false));
+        }, 3000);
+      })
+      .catch((err) => {
+        showError('Lỗi', err.message);
+        setBellRinging(false);
+      });
   };
 
   const toggleDay = useCallback((day: number) => {
@@ -183,19 +314,15 @@ export default function ScheduleScreen() {
 
   const handleSubmit = () => {
     const alarmTimeStr = `${String(alarmHour).padStart(2, '0')}:${String(alarmMinute).padStart(2, '0')}`;
-
     const isDuplicate = schedule.some(item =>
       item.alarmTime === alarmTimeStr &&
       (!isEditMode || item.id !== editTargetId)
     );
-
     if (isDuplicate) {
       showError('Lỗi', 'Giờ hẹn này đã tồn tại');
       return;
     }
-
     const sortedDays = [...selectedDays].sort((a, b) => a - b);
-
     if (isEditMode && editTargetId !== null) {
       const updated = schedule.map(item =>
         item.id === editTargetId
@@ -220,7 +347,6 @@ export default function ScheduleScreen() {
     setSelectedDays([]);
   };
 
-  // Hiển thị nhãn thứ gọn trên card (VD: "T2 T4 T6", "Hằng ngày", "1 lần")
   const formatDaysLabel = (days: number[]) => {
     if (days.length === 0) return '1 lần';
     if (days.length === 7) return 'Hằng ngày';
@@ -233,88 +359,172 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ── HEADER ── */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Hẹn giờ</Text>
-          <Text style={styles.headerSubtitle}>Chuông báo tiết học</Text>
+          <Text style={styles.headerTitle}>
+            {activeTab === 'schedule' ? 'Hẹn giờ' : 'Thủ công'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {activeTab === 'schedule' ? 'Chuông báo tự động' : 'Bật chuông báo ngay'}
+          </Text>
         </View>
-        {/* <Image source={require('../../assets/images/ctu.png')} style={styles.headerLogo} resizeMode="contain" /> */}
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scheduleListContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {schedule.length > 0 ? (
-          schedule.map((item) => (
-            <Pressable
-              key={item.id}
-              style={({ pressed }) => [
-                styles.cardContainer,
-                item.enabled ? styles.cardEnabled : styles.cardDisabled,
-                pressed && { opacity: 0.75 },
-              ]}
-              onPress={() => openEditModal(item)}
-              onLongPress={() => openBottomSheet(item.id)}
-              delayLongPress={350}
-            >
-              <View style={[styles.timeColumn, !item.enabled && styles.timeColumnDisabled]}>
-                <Text style={[styles.timeText, !item.enabled && styles.timeTextDisabled]}>
-                  {item.alarmTime.split(':')[0]}
-                </Text>
-                <Text style={[styles.timeSep, !item.enabled && styles.timeTextDisabled]}>:</Text>
-                <Text style={[styles.timeText, !item.enabled && styles.timeTextDisabled]}>
-                  {item.alarmTime.split(':')[1]}
-                </Text>
-              </View>
+      {/* ── TAB BAR ── */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'schedule' && styles.tabItemActive]}
+          onPress={() => handleTabPress('schedule')}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.tabLabel, activeTab === 'schedule' && styles.tabLabelActive]}>
+            Hẹn giờ
+          </Text>
+        </TouchableOpacity>
 
-              <View style={styles.noteColumn}>
-                {item.note ? (
-                  <Text style={[styles.noteText, !item.enabled && styles.noteTextDisabled]}>
-                    {item.note}
-                  </Text>
-                ) : (
-                  <Text style={[styles.notePlaceholder, !item.enabled && styles.noteTextDisabled]}>
-                    Không có ghi chú
-                  </Text>
-                )}
-                {/* Nhãn thứ lặp lại */}
-                <Text style={[styles.daysLabel, !item.enabled && styles.daysLabelDisabled]}>
-                  <FontAwesome6 name="rotate" size={10} color={item.enabled ? '#FFF200' : '#8899B0'} />
-                  {'  '}{formatDaysLabel(item.days)}
-                </Text>
-              </View>
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'manual' && styles.tabItemActive]}
+          onPress={() => handleTabPress('manual')}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.tabLabel, activeTab === 'manual' && styles.tabLabelActive]}>
+            Thủ công
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-              <View style={styles.switchColumn}>
-                <CustomSwitch
-                  value={item.enabled}
-                  onValueChange={() => {
-                    const updated = schedule.map(s =>
-                      s.id === item.id ? { ...s, enabled: !s.enabled } : s
-                    );
-                    setSchedule(updated);
-                    saveScheduleToFirebase(updated);
-                  }}
-                  activeColor="#00AFEF"
-                  inactiveColor="#C8D3E8"
-                />
+      {/* ── NỘI DUNG TAB HẸN GIỜ ── */}
+      {activeTab === 'schedule' && (
+        <>
+          <ScrollView
+            contentContainerStyle={styles.scheduleListContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {schedule.length > 0 ? (
+              schedule.map((item) => (
+                <Pressable
+                  key={item.id}
+                  style={({ pressed }) => [
+                    styles.cardContainer,
+                    item.enabled ? styles.cardEnabled : styles.cardDisabled,
+                    pressed && { opacity: 0.75 },
+                  ]}
+                  onPress={() => openEditModal(item)}
+                  onLongPress={() => openBottomSheet(item.id)}
+                  delayLongPress={350}
+                >
+                  <View style={[styles.timeColumn, !item.enabled && styles.timeColumnDisabled]}>
+                    <Text style={[styles.timeText, !item.enabled && styles.timeTextDisabled]}>
+                      {item.alarmTime.split(':')[0]}
+                    </Text>
+                    <Text style={[styles.timeSep, !item.enabled && styles.timeTextDisabled]}>:</Text>
+                    <Text style={[styles.timeText, !item.enabled && styles.timeTextDisabled]}>
+                      {item.alarmTime.split(':')[1]}
+                    </Text>
+                  </View>
+
+                  <View style={styles.noteColumn}>
+                    {item.note ? (
+                      <Text style={[styles.noteText, !item.enabled && styles.noteTextDisabled]}>
+                        {item.note}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.notePlaceholder, !item.enabled && styles.noteTextDisabled]}>
+                        Không có ghi chú
+                      </Text>
+                    )}
+                    <Text style={[styles.daysLabel, !item.enabled && styles.daysLabelDisabled]}>
+                      <FontAwesome6 name="rotate" size={10} color={item.enabled ? '#FFF200' : '#8899B0'} />
+                      {'  '}{formatDaysLabel(item.days)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.switchColumn}>
+                    <CustomSwitch
+                      value={item.enabled}
+                      onValueChange={() => {
+                        const updated = schedule.map(s =>
+                          s.id === item.id ? { ...s, enabled: !s.enabled } : s
+                        );
+                        setSchedule(updated);
+                        saveScheduleToFirebase(updated);
+
+                      }}
+                      activeColor="#00AFEF"
+                      inactiveColor="#C8D3E8"
+                    />
+                  </View>
+                </Pressable>
+              ))
+            ) : (
+              <View style={styles.emptyStateContainer}>
+                <FontAwesome6 name="bell-slash" size={40} color="#CBD5E0" style={{ marginBottom: 12 }} />
+                <Text style={styles.emptyText}>Chưa có hẹn giờ nào</Text>
+                <Text style={styles.emptySubText}>Nhấn + để thêm hẹn giờ mới</Text>
               </View>
-            </Pressable>
-          ))
-        ) : (
-          <View style={styles.emptyStateContainer}>
-            <FontAwesome6 name="bell-slash" size={40} color="#CBD5E0" style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyText}>Chưa có hẹn giờ nào</Text>
-            <Text style={styles.emptySubText}>Nhấn + để thêm hẹn giờ mới</Text>
+            )}
+          </ScrollView>
+
+          <TouchableOpacity style={styles.fab} onPress={openAddModal} activeOpacity={0.85}>
+            <FontAwesome6 name="plus" size={20} color="#ffffff" />
+          </TouchableOpacity>
+        </>
+      )}
+
+      {/* ── NỘI DUNG TAB THỦ CÔNG ── */}
+      {activeTab === 'manual' && (
+        <View style={styles.manualModeContainer}>
+          <View style={styles.manualModeCenter}>
+            <Text style={[styles.bellBtnLabel, bellRinging && styles.bellBtnLabelRinging]}>
+              {bellRinging ? 'Chuông đang reo...' : 'Nhấn để bật chuông'}
+            </Text>
+
+            <Animated.View style={[styles.bellShadowWrap, { transform: [{ scale: bellScaleAnim }] }]}>
+              <TouchableOpacity
+                style={styles.bellRingOuter}
+                onPress={ringBellNow}
+                activeOpacity={0.82}
+                disabled={bellRinging}
+              >
+                <LinearGradient
+                  colors={['#22C3FF', '#0E7FC4']}
+                  style={styles.bellRingMid}
+                >
+                  <LinearGradient
+                    colors={['#2E72C4', '#173E78']}
+                    style={styles.bellRingInner}
+                  >
+                    <FontAwesome6
+                      name="bell"
+                      size={74}
+                      color={bellRinging ? '#9CA3AF' : '#FFF200'}
+                    />
+                  </LinearGradient>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
-        )}
-      </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={openAddModal} activeOpacity={0.85}>
-        <FontAwesome6 name="plus" size={20} color="#ffffff" />
-      </TouchableOpacity>
+          {/* Trạng thái tạm tắt - đẩy xuống đáy màn hình */}
+          <View style={[
+            styles.pausedBadge,
+            pausedAlarmIdsRef.current.length === 0 && styles.pausedBadgeEmpty,
+          ]}>
+            <Text style={[
+              styles.pausedBadgeText,
+              pausedAlarmIdsRef.current.length === 0 && styles.pausedBadgeTextEmpty,
+            ]}>
+              {pausedAlarmIdsRef.current.length > 0
+                ? `Đã tạm tắt ${pausedAlarmIdsRef.current.length} hẹn giờ`
+                : 'Không có hẹn giờ nào bị tắt'}
+            </Text>
+          </View>
+        </View>
+      )}
 
+      {/* ── BOTTOM SHEET ── */}
       <Modal visible={showBottomSheet} transparent animationType="none" onRequestClose={closeBottomSheet}>
         <Pressable style={styles.bottomSheetOverlay} onPress={closeBottomSheet}>
           <Animated.View
@@ -339,16 +549,14 @@ export default function ScheduleScreen() {
               <View style={styles.bottomSheetDivider} />
 
               {!showConfirmDelete ? (
-                <>
-                  <TouchableOpacity
-                    style={styles.bottomSheetDeleteBtn}
-                    activeOpacity={0.7}
-                    onPress={() => setShowConfirmDelete(true)}
-                  >
-                    <FontAwesome6 name="trash" size={17} color="#DC2626" />
-                    <Text style={styles.bottomSheetDeleteText}>Xóa hẹn giờ</Text>
-                  </TouchableOpacity>
-                </>
+                <TouchableOpacity
+                  style={styles.bottomSheetDeleteBtn}
+                  activeOpacity={0.7}
+                  onPress={() => setShowConfirmDelete(true)}
+                >
+                  <FontAwesome6 name="trash" size={17} color="#DC2626" />
+                  <Text style={styles.bottomSheetDeleteText}>Xóa hẹn giờ</Text>
+                </TouchableOpacity>
               ) : (
                 <View style={styles.confirmDeleteSection}>
                   <View style={styles.confirmIconRow}>
@@ -382,20 +590,16 @@ export default function ScheduleScreen() {
         </Pressable>
       </Modal>
 
+      {/* ── MODAL THÊM/SỬA ── */}
       <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
         <View style={styles.modalOverlay}>
-          {/* Overlay bắt sự kiện đóng modal */}
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowModal(false)} />
-
-          {/* Nội dung modal - không bị ảnh hưởng bởi Pressable overlay */}
           <View style={styles.modalContent}>
-
             <View style={styles.modalHeader}>
               <Text style={styles.modalHeaderTitle}>
                 {isEditMode ? 'CHỈNH SỬA' : 'THÊM HẸN GIỜ'}
               </Text>
             </View>
-
             <View style={styles.modalFormContent}>
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Ghi chú</Text>
@@ -409,7 +613,6 @@ export default function ScheduleScreen() {
                   numberOfLines={3}
                 />
               </View>
-
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Chọn thời gian</Text>
                 <View style={styles.timePickerContainer}>
@@ -436,7 +639,6 @@ export default function ScheduleScreen() {
                   </View>
                 </View>
               </View>
-
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Lặp lại</Text>
                 <View style={styles.dayPickerRow}>
@@ -451,7 +653,6 @@ export default function ScheduleScreen() {
                 </View>
               </View>
             </View>
-
             <View style={styles.modalBottomActions}>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -468,16 +669,7 @@ export default function ScheduleScreen() {
                 <Text style={styles.modalBottomButtonTextSubmit}>Xong</Text>
               </TouchableOpacity>
             </View>
-
-            <FeedbackModal
-              visible={feedbackModal.visible}
-              type={feedbackModal.type}
-              title={feedbackModal.title}
-              message={feedbackModal.message}
-              onDismiss={hideFeedback}
-            />
           </View>
-
         </View>
       </Modal>
 
@@ -504,12 +696,39 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   headerContent: { flex: 1 },
   headerTitle: { fontSize: 26, fontWeight: '700', color: '#ffffff', marginBottom: 4 },
   headerSubtitle: { fontSize: 13, fontWeight: '500', color: '#ffffff' },
-  headerLogo: { width: 80, height: 80, marginLeft: 12 },
+
+  // ── TAB BAR ──
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: '#1F5CA9',
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  tabLabelActive: {
+    color: '#1F5CA9',
+  },
 
   scheduleListContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 120 },
 
@@ -548,9 +767,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   noteText: { fontSize: 15, fontWeight: '600', color: '#ffffff', lineHeight: 21 },
-  notePlaceholder: {
-    fontSize: 14, color: '#8BAACC', fontWeight: '400',
-  },
+  notePlaceholder: { fontSize: 14, color: '#8BAACC', fontWeight: '400' },
   noteTextDisabled: { color: '#8899B0' },
   daysLabel: { fontSize: 12, fontWeight: '500', color: '#FFF200' },
   daysLabelDisabled: { color: '#8899B0' },
@@ -582,10 +799,103 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── BOTTOM SHEET ──
-  bottomSheetOverlay: {
-    flex: 1, backgroundColor: '#00000073', justifyContent: 'flex-end',
+  // ── MÀN HÌNH THỦ CÔNG ──
+  manualModeContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 32,
+    paddingTop: 40,
+    paddingBottom: 36,
   },
+  manualModeCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  pausedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#1F5CA9',
+  },
+  pausedBadgeEmpty: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  pausedBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F5CA9',
+    letterSpacing: 0.2,
+  },
+  pausedBadgeTextEmpty: {
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  // Khung bọc ngoài cùng - giữ shadow (không bị cắt)
+  bellShadowWrap: {
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    shadowColor: '#0E2A52',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.28,
+    shadowRadius: 28,
+    elevation: 14,
+  },
+  // Lớp ngoài
+  bellRingOuter: {
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  bellRingOuterRinging: {
+    backgroundColor: '#E5E7EB',
+    shadowColor: '#6B7280',
+    shadowOpacity: 0.3,
+  },
+  // Lớp giữa
+  bellRingMid: {
+    width: 210,
+    height: 210,
+    borderRadius: 105,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  // Lớp trong
+  bellRingInner: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  bellBtnLabel: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#1F5CA9',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  bellBtnLabelRinging: {
+    color: '#9CA3AF',
+  },
+
+  // ── BOTTOM SHEET ──
+  bottomSheetOverlay: { flex: 1, backgroundColor: '#00000073', justifyContent: 'flex-end' },
   bottomSheetContainer: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
@@ -601,11 +911,8 @@ const styles = StyleSheet.create({
   bsInfoSimple: { paddingHorizontal: 4, paddingBottom: 20, gap: 4 },
   bsInfoTime: { fontSize: 40, fontWeight: '800', color: '#1F5CA9', letterSpacing: 1 },
   bsInfoNote: { fontSize: 15, fontWeight: '500', color: '#4A5568' },
-  bsInfoNotePlaceholder: {
-    fontSize: 15, fontWeight: '400', color: '#A0AEC0', fontStyle: 'italic',
-  },
+  bsInfoNotePlaceholder: { fontSize: 15, fontWeight: '400', color: '#A0AEC0', fontStyle: 'italic' },
   bsDaysLabel: { fontSize: 13, fontWeight: '500', color: '#1F5CA9' },
-
   bottomSheetDivider: { height: 1, backgroundColor: '#F0F4F8', marginBottom: 16 },
   bottomSheetDeleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -622,9 +929,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   confirmDeleteTitle: { fontSize: 14, fontWeight: '500', color: '#111827' },
-  confirmDeleteSub: {
-    fontSize: 12, color: '#6B7280', marginBottom: 14, paddingLeft: 44, lineHeight: 18,
-  },
+  confirmDeleteSub: { fontSize: 12, color: '#6B7280', marginBottom: 14, paddingLeft: 44, lineHeight: 18 },
   confirmDeleteBtnRow: { flexDirection: 'row', gap: 8 },
   confirmCancelBtn: {
     flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#ffffff',
@@ -638,9 +943,7 @@ const styles = StyleSheet.create({
   confirmDeleteBtnText: { fontSize: 13, fontWeight: '500', color: '#ffffff' },
 
   // ── MODAL ──
-  modalOverlay: {
-    flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center',
-  },
+  modalOverlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center' },
   modalContent: {
     backgroundColor: '#FFFFFF', borderRadius: 24, width: '92%', maxWidth: 380, overflow: 'hidden',
   },
@@ -660,33 +963,21 @@ const styles = StyleSheet.create({
   timePickerCol: { flex: 1, alignItems: 'center' },
   timePickerLabel: { fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.5 },
   timePickerBox: { height: 150, width: '100%', alignItems: 'center', justifyContent: 'center' },
-  timePickerSeparator: {
-    fontSize: 22, fontWeight: '600', color: '#1F5CA9', marginTop: 14, paddingHorizontal: 2,
-  },
+  timePickerSeparator: { fontSize: 22, fontWeight: '600', color: '#1F5CA9', marginTop: 14, paddingHorizontal: 2 },
   noteInput: {
     borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 11, backgroundColor: '#F8FAFC',
     fontWeight: '500', color: '#000000', textAlignVertical: 'top', minHeight: 80,
   },
-
-  // Chọn ngày lặp lại
-  dayPickerRow: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6,
-  },
+  dayPickerRow: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
   dayBtn: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: '#F0F4FA', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#E2E8F0',
   },
-  dayBtnActive: {
-    backgroundColor: '#1F5CA9', borderColor: '#1F5CA9',
-  },
+  dayBtnActive: { backgroundColor: '#1F5CA9', borderColor: '#1F5CA9' },
   dayBtnText: { fontSize: 11, fontWeight: '700', color: '#7A8FAD' },
   dayBtnTextActive: { color: '#FFF200' },
-  dayHint: {
-    fontSize: 12, color: '#7A8FAD', marginTop: 8, textAlign: 'center', fontStyle: 'italic',
-  },
-
   modalBottomActions: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 24, paddingBottom: 20, paddingTop: 5, backgroundColor: '#FFFFFF',

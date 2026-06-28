@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { onValue, ref, update } from 'firebase/database';
+import { get, onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,6 +36,10 @@ export default function SettingsScreen() {
   const [savedBrightness, setSavedBrightness] = useState(200);
   const [brightnessInput, setBrightnessInput] = useState('200');
 
+  const [ringDuration, setRingDuration] = useState(5);
+  const [savedRingDuration, setSavedRingDuration] = useState(5);
+  const [ringDurationInput, setRingDurationInput] = useState('5');
+
   const [feedbackModal, setFeedbackModal] = useState<{
     visible: boolean; type: 'success' | 'error'; title: string; message: string;
   }>({ visible: false, type: 'success', title: '', message: '' });
@@ -59,7 +63,15 @@ export default function SettingsScreen() {
         setBrightnessInput(String(val));
       }
     });
-    return () => { unsubWifi(); unsubBright(); };
+    const unsubRing = onValue(ref(db, 'DongHo/ThoiGianReo'), (snap) => {
+      const val = snap.val();
+      if (typeof val === 'number' && val > 0) {
+        setRingDuration(val);
+        setSavedRingDuration(val);
+        setRingDurationInput(String(val));
+      }
+    });
+    return () => { unsubWifi(); unsubBright(); unsubRing(); };
   }, []);
 
   useEffect(() => {
@@ -76,7 +88,6 @@ export default function SettingsScreen() {
     timeoutRef.current = null;
   };
 
-  // Đặt/reset timeout — dùng lại khi ESP32 xác nhận đã nhận lệnh
   const startTimeout = (ms: number, label: string) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
@@ -90,7 +101,6 @@ export default function SettingsScreen() {
     Keyboard.dismiss();
     if (!ssid.trim()) { showError('Thiếu thông tin', 'Vui lòng nhập tên Wi-Fi'); return; }
     if (dangKiemTra) return;
-
     try {
       await update(ref(db, 'WiFi'), {
         ssid: ssid.trim(),
@@ -98,40 +108,33 @@ export default function SettingsScreen() {
         capNhat: true,
         trangThai: 'choDoi',
       });
-
       setSsid('');
       setPassword('');
       setDangKiemTra(true);
       setStatusText('Chờ thiết bị phản hồi...');
-
-      // Timeout lần 1: 20 giây chờ ESP32 nhận lệnh (capNhat polling mỗi 10s)
       startTimeout(20000, 'Chưa nhận được lệnh đổi Wi-Fi.');
 
-      const unsub = onValue(ref(db, 'WiFi/trangThai'), (snap) => {
-        const val = snap.val() as string;
-        if (!val || val === 'choDoi') return;
-
-        if (val === 'dangKetNoi') {
-          // ESP32 đã nhận lệnh, đang thử kết nối
-          // Reset timeout dài hơn (15s) vì WiFi.begin cần thêm thời gian
-          setStatusText('Đang kết nối Wi-Fi mới...');
-          startTimeout(20000, 'Không kết nối được Wi-Fi.');
-          return;
-        }
-
-        // Có kết quả cuối
-        stopListening();
-        setDangKiemTra(false);
-
-        if (val === 'thanhCong') {
-          showSuccess('Kết nối thành công', 'Đã kết nối Wi-Fi mới.\nThiết bị sẽ tự khởi động lại.');
-        } else if (val === 'thatBai') {
-          showError('Kết nối thất bại', 'Sai mật khẩu hoặc không tìm thấy mạng.\nTiếp tục dùng Wi-Fi cũ.');
-        }
-      });
-
-      trangThaiUnsub.current = unsub;
-
+      const pollInterval = setInterval(async () => {
+        try {
+          const snap = await get(ref(db, 'WiFi/trangThai'));
+          const val = snap.val() as string;
+          if (!val || val === 'choDoi') return;
+          if (val === 'dangKetNoi') {
+            setStatusText('Đang kết nối Wi-Fi mới...');
+            startTimeout(25000, 'Không kết nối được Wi-Fi.');
+            return;
+          }
+          clearInterval(pollInterval);
+          stopListening();
+          setDangKiemTra(false);
+          if (val === 'thanhCong') {
+            showSuccess('Kết nối thành công', 'Đã kết nối Wi-Fi mới.\nThiết bị sẽ tự khởi động lại.');
+          } else if (val === 'thatBai') {
+            showError('Kết nối thất bại', 'Sai mật khẩu hoặc không tìm thấy mạng.\nTiếp tục dùng Wi-Fi cũ.');
+          }
+        } catch (_) {}
+      }, 1500);
+      trangThaiUnsub.current = () => clearInterval(pollInterval);
     } catch (e: any) { showError('Lỗi Firebase', e.message); }
   };
 
@@ -150,8 +153,33 @@ export default function SettingsScreen() {
     } catch (e: any) { showError('Lỗi Firebase', e.message); }
   };
 
-  const parsedInput = parseInt(brightnessInput, 10);
-  const brightnessChanged = !isNaN(parsedInput) && parsedInput !== savedBrightness;
+  const handleSaveRingDuration = async () => {
+    Keyboard.dismiss();
+    const num = parseInt(ringDurationInput, 10);
+    if (isNaN(num) || num < 1 || num > 300) {
+      showError('Giá trị không hợp lệ', 'Vui lòng nhập số từ 1 đến 300 giây');
+      return;
+    }
+    try {
+      await update(ref(db, 'DongHo'), { ThoiGianReo: num });
+      setRingDuration(num);
+      setSavedRingDuration(num);
+      showSuccess('Đã lưu', `Thời gian chuông reo: ${num} giây`);
+    } catch (e: any) { showError('Lỗi Firebase', e.message); }
+  };
+
+  const parsedBrightnessInput = parseInt(brightnessInput, 10);
+  const brightnessChanged = !isNaN(parsedBrightnessInput) && parsedBrightnessInput !== savedBrightness;
+
+  const parsedRingInput = parseInt(ringDurationInput, 10);
+  const ringDurationChanged = !isNaN(parsedRingInput) && parsedRingInput !== savedRingDuration;
+
+  const [expandedCard, setExpandedCard] = useState<'wifi' | 'brightness' | 'ring' | null>(null);
+
+  const toggleCard = (card: 'wifi' | 'brightness' | 'ring') => {
+    Keyboard.dismiss();
+    setExpandedCard(prev => (prev === card ? null : card));
+  };
 
   return (
     <KeyboardAvoidingView
@@ -175,9 +203,14 @@ export default function SettingsScreen() {
       >
         <View style={styles.body}>
 
+          {/* Card Wi-Fi */}
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardIconBlue}>
+            <TouchableOpacity
+              style={styles.cardHeader}
+              onPress={() => toggleCard('wifi')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cardIconBox}>
                 <Ionicons name="wifi" size={20} color="#1F5CA9" />
               </View>
               <View style={{ flex: 1 }}>
@@ -190,105 +223,190 @@ export default function SettingsScreen() {
                   <Text style={styles.cardSubtitle}>Chưa cấu hình</Text>
                 )}
               </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              <Text style={styles.fieldLabel}>Tên Wi-Fi</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nhập tên mạng Wi-Fi"
-                placeholderTextColor="#A0AEC0"
-                value={ssid}
-                onChangeText={setSsid}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!dangKiemTra}
+              <Ionicons
+                name="chevron-down"
+                size={20}
+                color="#7A8FAD"
+                style={{ transform: [{ rotate: expandedCard === 'wifi' ? '180deg' : '0deg' }] }}
               />
+            </TouchableOpacity>
 
-              <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Mật khẩu</Text>
-              <View style={styles.inputRow}>
+            {expandedCard === 'wifi' && (
+              <View style={styles.cardBody}>
+                <Text style={styles.fieldLabel}>Tên Wi-Fi</Text>
                 <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="Nhập mật khẩu Wi-Fi"
+                  style={styles.input}
+                  placeholder="Nhập tên mạng Wi-Fi"
                   placeholderTextColor="#A0AEC0"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
+                  value={ssid}
+                  onChangeText={setSsid}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!dangKiemTra}
                 />
-                <TouchableOpacity
-                  style={styles.eyeBtn}
-                  onPress={() => setShowPassword(!showPassword)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20} color="#7A8FAD"
+
+                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Mật khẩu</Text>
+                {/* Icon mắt nằm TRONG ô input */}
+                <View style={styles.inputWithIcon}>
+                  <TextInput
+                    style={styles.inputInner}
+                    placeholder="Nhập mật khẩu Wi-Fi"
+                    placeholderTextColor="#A0AEC0"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!dangKiemTra}
                   />
+                  <TouchableOpacity
+                    style={styles.eyeInner}
+                    onPress={() => setShowPassword(p => !p)}
+                    activeOpacity={0.6}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={19}
+                      color="#7A8FAD"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, dangKiemTra && styles.saveBtnDisabled]}
+                  onPress={handleSaveWifi}
+                  activeOpacity={0.8}
+                  disabled={dangKiemTra}
+                >
+                  {dangKiemTra ? (
+                    <View style={styles.saveBtnLoading}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                      <Text style={[styles.saveBtnText, { marginLeft: 8 }]}>{statusText}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.saveBtnText}>Lưu Wi-Fi</Text>
+                  )}
                 </TouchableOpacity>
               </View>
-
-              <TouchableOpacity
-                style={[styles.saveBtn, dangKiemTra && styles.saveBtnDisabled]}
-                onPress={handleSaveWifi}
-                activeOpacity={0.8}
-                disabled={dangKiemTra}
-              >
-                {dangKiemTra ? (
-                  <View style={styles.saveBtnLoading}>
-                    <ActivityIndicator size="small" color="#ffffff" />
-                    <Text style={[styles.saveBtnText, { marginLeft: 8 }]}>{statusText}</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.saveBtnText}>Lưu Wi-Fi</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
 
+          {/* Card Độ sáng */}
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardIconYellow}>
-                <Ionicons name="sunny" size={20} color="#FFF200" />
+            <TouchableOpacity
+              style={styles.cardHeader}
+              onPress={() => toggleCard('brightness')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cardIconBox}>
+                <Ionicons name="sunny" size={20} color="#1F5CA9" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>Độ sáng LED</Text>
                 <Text style={styles.cardSubtitle}>Hiện tại: {brightness}</Text>
               </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              <Text style={styles.fieldLabel}>Giá trị (0 – 100)</Text>
-              <TextInput
-                style={styles.input}
-                onChangeText={(t) => {
-                  if (/^\d{0,3}$/.test(t)) setBrightnessInput(t);
-                }}
-                keyboardType="number-pad"
-                maxLength={3}
-                placeholder="0 – 100"
-                placeholderTextColor="#A0AEC0"
-                selectTextOnFocus
-                onFocus={() => {
-                  setTimeout(() => {
-                    scrollRef.current?.scrollToEnd({ animated: true });
-                  }, 150);
-                }}
+              <Ionicons
+                name="chevron-down"
+                size={20}
+                color="#7A8FAD"
+                style={{ transform: [{ rotate: expandedCard === 'brightness' ? '180deg' : '0deg' }] }}
               />
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.saveBtn, !brightnessChanged && styles.saveBtnDisabled]}
-                onPress={handleSaveBrightness}
-                activeOpacity={0.8}
-                disabled={!brightnessChanged}
-              >
-                <Text style={styles.saveBtnText}>
-                  {brightnessChanged ? 'Lưu độ sáng' : 'Đã lưu'}
+            {expandedCard === 'brightness' && (
+              <View style={styles.cardBody}>
+                <Text style={styles.fieldLabel}>Giá trị (0 – 100)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={brightnessInput}
+                  onChangeText={(t) => {
+                    if (/^\d{0,3}$/.test(t)) setBrightnessInput(t);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  placeholder="0 – 100"
+                  placeholderTextColor="#A0AEC0"
+                  selectTextOnFocus
+                  onFocus={() => {
+                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+                  }}
+                />
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, !brightnessChanged && styles.saveBtnDisabled]}
+                  onPress={handleSaveBrightness}
+                  activeOpacity={0.8}
+                  disabled={!brightnessChanged}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {brightnessChanged ? 'Lưu độ sáng' : 'Đã lưu'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Card Thời gian chuông reo */}
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.cardHeader}
+              onPress={() => toggleCard('ring')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cardIconBox}>
+                <Ionicons name="alarm" size={20} color="#1F5CA9" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Thời gian chuông reo</Text>
+                <Text style={styles.cardSubtitle}>Hiện tại: {ringDuration} giây</Text>
+              </View>
+              <Ionicons
+                name="chevron-down"
+                size={20}
+                color="#7A8FAD"
+                style={{ transform: [{ rotate: expandedCard === 'ring' ? '180deg' : '0deg' }] }}
+              />
+            </TouchableOpacity>
+
+            {expandedCard === 'ring' && (
+              <View style={styles.cardBody}>
+                <Text style={styles.fieldLabel}>Số giây chuông reo (1 – 300)</Text>
+                <View style={styles.inputWithIcon}>
+                  <TextInput
+                    style={styles.inputInner}
+                    value={ringDurationInput}
+                    onChangeText={(t) => {
+                      if (/^\d{0,3}$/.test(t)) setRingDurationInput(t);
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={3}
+                    placeholder="VD: 5"
+                    placeholderTextColor="#A0AEC0"
+                    selectTextOnFocus
+                    onFocus={() => {
+                      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+                    }}
+                  />
+                  <Text style={styles.unitInner}>giây</Text>
+                </View>
+
+                <Text style={styles.hintText}>
+                  Chuông sẽ reo liên tục trong khoảng thời gian này mỗi khi báo thức kích hoạt.
                 </Text>
-              </TouchableOpacity>
-            </View>
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, !ringDurationChanged && styles.saveBtnDisabled]}
+                  onPress={handleSaveRingDuration}
+                  activeOpacity={0.8}
+                  disabled={!ringDurationChanged}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {ringDurationChanged ? 'Lưu thời gian' : 'Đã lưu'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
         </View>
@@ -328,33 +446,52 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row', alignItems: 'center',
     padding: 16, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: '#F0F4FA',
   },
-  cardIconBlue: {
+  cardIconBox: {
     width: 40, height: 40, borderRadius: 12,
     backgroundColor: '#E8F4FB', alignItems: 'center', justifyContent: 'center',
-  },
-  cardIconYellow: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: '#fffeec', alignItems: 'center', justifyContent: 'center',
   },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#11181C' },
   cardSubtitle: { fontSize: 12, color: '#7A8FAD', marginTop: 2 },
   cardSubtitleBold: { fontWeight: '700', color: '#1F5CA9' },
-  cardBody: { padding: 16 },
+  cardBody: {
+    padding: 16, paddingTop: 4,
+    borderTopWidth: 1, borderTopColor: '#F0F4FA',
+  },
 
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#4A5568', marginBottom: 8 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#4A5568', marginBottom: 8, marginTop: 14 },
+
+  // Input thường
   input: {
     borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 11,
     backgroundColor: '#F8FAFC', fontSize: 15, color: '#11181C',
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  eyeBtn: {
-    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 12, backgroundColor: '#F8FAFC',
-    borderWidth: 1, borderColor: '#E2E8F0',
+
+  // Container bọc input + icon mắt bên trong
+  inputWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
   },
+  inputInner: {
+    flex: 1,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: '#11181C',
+  },
+  eyeInner: {
+    paddingLeft: 8,
+    paddingVertical: 11,
+  },
+
+  unitInner: {
+    fontSize: 13, fontWeight: '600', color: '#7A8FAD',
+    paddingLeft: 6, paddingVertical: 11,
+  },
+  hintText: { fontSize: 12, color: '#7A8FAD', marginTop: 10, lineHeight: 18 },
 
   saveBtn: {
     backgroundColor: '#1F5CA9', borderRadius: 12, paddingVertical: 13,
