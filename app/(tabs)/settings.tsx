@@ -1,3 +1,4 @@
+import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { get, onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
@@ -132,7 +133,7 @@ export default function SettingsScreen() {
           } else if (val === 'thatBai') {
             showError('Kết nối thất bại', 'Sai mật khẩu hoặc không tìm thấy mạng.\nTiếp tục dùng Wi-Fi cũ.');
           }
-        } catch (_) {}
+        } catch (_) { }
       }, 1500);
       trangThaiUnsub.current = () => clearInterval(pollInterval);
     } catch (e: any) { showError('Lỗi Firebase', e.message); }
@@ -319,7 +320,6 @@ export default function SettingsScreen() {
                 <Text style={styles.fieldLabel}>Giá trị (0 – 100)</Text>
                 <TextInput
                   style={styles.input}
-                  value={brightnessInput}
                   onChangeText={(t) => {
                     if (/^\d{0,3}$/.test(t)) setBrightnessInput(t);
                   }}
@@ -355,7 +355,7 @@ export default function SettingsScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.cardIconBox}>
-                <Ionicons name="alarm" size={20} color="#1F5CA9" />
+                <FontAwesome6 name="bell" size={18} color="#1F5CA9" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>Thời gian chuông reo</Text>
@@ -375,7 +375,6 @@ export default function SettingsScreen() {
                 <View style={styles.inputWithIcon}>
                   <TextInput
                     style={styles.inputInner}
-                    value={ringDurationInput}
                     onChangeText={(t) => {
                       if (/^\d{0,3}$/.test(t)) setRingDurationInput(t);
                     }}
@@ -392,7 +391,7 @@ export default function SettingsScreen() {
                 </View>
 
                 <Text style={styles.hintText}>
-                  Chuông sẽ reo liên tục trong khoảng thời gian này mỗi khi báo thức kích hoạt.
+                  Chuông sẽ reo liên tục trong khoảng thời gian này mỗi khi được kích hoạt.
                 </Text>
 
                 <TouchableOpacity
